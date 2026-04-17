@@ -1,0 +1,64 @@
+# ── Python ────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── Django ────────────────────────────────────────────────────
+backend/.env
+backend/.env.*
+!backend/.env.example
+backend/media/
+backend/staticfiles/
+backend/db.sqlite3
+
+# ── Node / Frontend ───────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ── MCP Connector ─────────────────────────────────────────────
+mcp-connector/node_modules/
+mcp-connector/.env
+
+# ── Logs ──────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+celerybeat-schedule
+celerybeat.pid
+
+# ── Client Documents (sensitive — not for version control) ────
+OneDrive_2026-03-22/
+
+# ── OS ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ───────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+
+# ── Misc ──────────────────────────────────────────────────────
+*.egg-info/
+.eggs/
+*.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
