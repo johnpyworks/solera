@@ -84,3 +84,110 @@ You think and respond aligned with the Solera philosophy and LEAP financial mode
 - Cash flow optimization and debt elimination
 You help advisors prepare for meetings, recall client context, draft talking points, and answer product questions.
 Be direct, advisor-focused, and concise. Never give advice that contradicts the Solera/LEAP approach."""
+
+
+MEETING_NOTES_SYSTEM = """You are the Solera Financial Advisory AI assistant.
+Your role is to produce structured, professional meeting notes from a financial advisor-client meeting transcript.
+Follow the Solera LEAP model philosophy: protection, savings, growth, cash flow, and debt management.
+Be concise and accurate. Focus only on what was actually discussed."""
+
+
+def meeting_notes_user_prompt(transcript: str, client_name: str, meeting_type: str) -> str:
+    return f"""Analyze this {meeting_type} meeting transcript for client {client_name} and produce structured meeting notes.
+
+Return ONLY a valid JSON object with this exact structure:
+{{
+  "summary": "2-3 sentence overview of the meeting",
+  "key_points": ["point 1", "point 2", ...],
+  "decisions": ["decision 1", ...],
+  "action_items": [
+    {{"owner": "advisor", "task": "description", "due": "YYYY-MM-DD or null"}},
+    {{"owner": "client", "task": "description", "due": "YYYY-MM-DD or null"}}
+  ]
+}}
+
+Transcript:
+{transcript[:8000]}"""
+
+
+NEXT_MEETING_SYSTEM = """You are the Solera Financial Advisory AI assistant.
+Extract next meeting scheduling information from a financial advisor-client meeting transcript.
+Be precise. Only extract information that was explicitly mentioned."""
+
+
+def next_meeting_user_prompt(transcript: str, client_name: str, client_email: str, advisor_name: str, advisor_email: str, today: str) -> str:
+    return f"""Review this meeting transcript and determine if a next meeting was scheduled or discussed.
+
+Today's date: {today}
+
+Return ONLY a valid JSON object:
+{{
+  "needs_date": true/false,
+  "meeting_agreed": true/false,
+  "proposed_date": "ISO 8601 datetime or null",
+  "duration_min": 60,
+  "meeting_type": "Discovery|LEAP Process|Implementation|Solera Heartbeat|30-Day Check-In|Other",
+  "platform": "zoom",
+  "subject": "meeting subject line",
+  "body": "brief meeting invite body text (2-3 sentences)",
+  "attendees": [
+    {{"name": "{client_name}", "email": "{client_email}"}},
+    {{"name": "{advisor_name}", "email": "{advisor_email}"}}
+  ]
+}}
+
+Set needs_date=true if no specific date was agreed. Set meeting_agreed=false if no next meeting was mentioned at all.
+
+Transcript:
+{transcript[:6000]}"""
+
+
+MEMORY_EXTRACTION_SYSTEM = """You are the Solera Financial Advisory AI assistant.
+Extract key facts about a financial advisory client from a meeting transcript.
+Focus on facts that will help the advisor in future meetings."""
+
+
+def memory_extraction_user_prompt(transcript: str, client_name: str, existing_memory: dict) -> str:
+    existing_str = "\n".join(f"  {k}: {v}" for k, v in existing_memory.items()) if existing_memory else "  (none yet)"
+    return f"""Extract key facts about client {client_name} from this meeting transcript.
+
+Existing known facts:
+{existing_str}
+
+Return ONLY a valid JSON object with key-value pairs. Keys should be snake_case identifiers like:
+risk_tolerance, investment_goals, family_situation, income_range, insurance_needs, concerns,
+retirement_timeline, current_products, health_notes, language_preference, etc.
+
+Only include facts explicitly mentioned. Update existing facts if new information was provided.
+Maximum 10 key-value pairs.
+
+{{
+  "risk_tolerance": "conservative",
+  "family_situation": "married with 2 college-age children"
+}}
+
+Transcript:
+{transcript[:6000]}"""
+
+
+ACTION_ITEMS_SYSTEM = """You are the Solera Financial Advisory AI assistant.
+Extract actionable tasks for both the financial advisor and client from a meeting transcript."""
+
+
+def action_items_user_prompt(transcript: str, client_name: str, today: str) -> str:
+    return f"""Extract concrete action items from this financial advisory meeting with client {client_name}.
+
+Today: {today}
+
+Return ONLY a valid JSON object:
+{{
+  "tasks": [
+    {{"owner": "advisor", "task": "Send Penn Mutual illustration to client", "due": "YYYY-MM-DD or null"}},
+    {{"owner": "client", "task": "Gather last 3 years of tax returns", "due": "YYYY-MM-DD or null"}}
+  ]
+}}
+
+Only include tasks that were explicitly mentioned or agreed upon. Both advisor and client tasks.
+
+Transcript:
+{transcript[:6000]}"""

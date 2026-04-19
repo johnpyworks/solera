@@ -4,7 +4,7 @@ from datetime import date
 
 from apps.agents.models import AgentLog
 from apps.agents.provider import AIProvider
-from apps.agents.prompts import SERVICE_AGENT_SYSTEM, SERVICE_AGENT_PROMPT
+from apps.agents.prompt_store import get_prompt
 from apps.approvals.models import ApprovalItem
 from apps.meetings.models import Meeting
 from apps.settings_app.models import AdvisorSettings
@@ -30,13 +30,13 @@ def run(meeting_id: str) -> dict:
         return {"error": "No notes to extract tasks from"}
 
     ai = AIProvider()
-    prompt = SERVICE_AGENT_PROMPT.format(
+    prompt = get_prompt("service_agent_prompt").format(
         client_name=client.name,
         notes=notes[:3000],
         today=str(date.today()),
     )
 
-    raw = ai.complete(system_prompt=SERVICE_AGENT_SYSTEM, user_prompt=prompt)
+    raw = ai.complete(system_prompt=get_prompt("service_agent_system"), user_prompt=prompt)["text"]
 
     # Parse JSON from response
     import re
@@ -52,7 +52,7 @@ def run(meeting_id: str) -> dict:
 
     item = ApprovalItem.objects.create(
         owner=meeting.owner,
-        item_type="wealthbox_task",
+        item_type="action_items",
         client=client,
         client_name=client.name,
         agent="Service Agent",

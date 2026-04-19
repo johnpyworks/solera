@@ -9,7 +9,9 @@ class ApprovalItem(models.Model):
         ("email_summary", "Post-Meeting Summary"),
         ("reminder_48hr", "48hr Reminder"),
         ("reminder_24hr", "24hr Reminder"),
-        ("wealthbox_task", "Wealthbox Tasks"),
+        ("action_items", "Action Items"),
+        ("meeting_notes", "Meeting Notes"),
+        ("calendar_event", "Calendar Event"),
         ("questionnaire_link", "Questionnaire Link"),
         ("form", "Form Draft"),
     ]

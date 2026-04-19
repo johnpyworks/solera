@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from apps.agents.models import AgentLog
 from apps.agents.provider import AIProvider
-from apps.agents.prompts import SCHEDULER_SYSTEM, SCHEDULER_REMINDER_48HR
+from apps.agents.prompt_store import get_prompt
 from apps.approvals.models import ApprovalItem
 from apps.meetings.models import Meeting, Reminder
 from apps.settings_app.models import AdvisorSettings
@@ -38,7 +38,7 @@ def check_and_queue_reminders():
         meeting_dt = meeting.scheduled_at.strftime("%A, %B %d at %-I:%M %p")
         language_tag = client.language_tag or ""
 
-        prompt = SCHEDULER_REMINDER_48HR.format(
+        prompt = get_prompt("scheduler_reminder_48hr").format(
             client_name=client.name,
             meeting_type=meeting.meeting_type,
             meeting_datetime=meeting_dt,
@@ -50,7 +50,7 @@ def check_and_queue_reminders():
         is_russian = "ru" in language_tag.lower()
 
         try:
-            body = AIProvider().complete(system_prompt=SCHEDULER_SYSTEM, user_prompt=prompt)
+            body = AIProvider().complete(system_prompt=get_prompt("scheduler_system"), user_prompt=prompt)
         except Exception as e:
             body = f"[Draft unavailable: {e}]"
 

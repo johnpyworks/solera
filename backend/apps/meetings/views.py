@@ -24,6 +24,12 @@ class MeetingListView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         qs = get_meeting_queryset(self.request.user)
+        start = self.request.query_params.get("start")
+        end = self.request.query_params.get("end")
+        if start:
+            qs = qs.filter(scheduled_at__gte=start)
+        if end:
+            qs = qs.filter(scheduled_at__lte=end)
         if self.request.query_params.get("upcoming") == "true":
             qs = qs.filter(is_past=False)
         return qs

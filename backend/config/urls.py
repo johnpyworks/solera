@@ -16,4 +16,5 @@ urlpatterns = [
     path("api/v1/chat/", include("apps.chat.urls")),
     path("api/v1/settings/", include("apps.settings_app.urls")),
     path("api/v1/mcp/", include("apps.mcp_bridge.urls")),
+    path("api/v1/db/", include("apps.db_explorer.urls")),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

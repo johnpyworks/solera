@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -15,9 +15,11 @@ import {
   Plus,
   X,
   ClipboardList,
+  Check,
+  Sparkles,
 } from "lucide-react";
-import { clients, meetings, upcomingMeetings, approvalItems, households } from "../data/mockData";
 import { useApp } from "../context/AppContext";
+import { apiFetch, apiUpload } from "../api/client";
 import { ApprovalCard } from "./ApprovalQueue";
 
 const STAGE_COLORS = {
@@ -41,26 +43,27 @@ const FILE_TYPE_LABELS = {
   brief: "Brief",
 };
 
-const TABS = ["Overview", "Meetings", "Emails", "Notes", "Files"];
+const TABS = ["Overview", "Meetings", "Emails", "Notes", "Files", "Tasks"];
 
 // ── Household Panel ───────────────────────────────────────────
 
 function HouseholdPanel({ client }) {
-  const { getMembersForHousehold, addHouseholdMember, addMemberNote } = useApp();
+  const { addHouseholdMember, addMemberNote } = useApp();
   const [adding, setAdding] = useState(false);
   const [expandedMember, setExpandedMember] = useState(null);
   const [noteInputs, setNoteInputs] = useState({});
   const [form, setForm] = useState({ name: "", relationship: "Spouse", email: "", phone: "" });
 
-  const household = households.find((h) => h.id === client.household_id);
+  const household = client.household_detail;
   if (!household) return null;
 
-  const members = getMembersForHousehold(client.household_id);
+  // Members from API response + any in-memory additions for this session
+  const members = household.members || [];
 
   function handleAdd(e) {
     e.preventDefault();
     if (!form.name.trim()) return;
-    addHouseholdMember(client.household_id, form);
+    addHouseholdMember(household.id, form);
     setForm({ name: "", relationship: "Spouse", email: "", phone: "" });
     setAdding(false);
   }
@@ -87,9 +90,9 @@ function HouseholdPanel({ client }) {
 
       {/* Primary (current client) */}
       <div className="hh-member primary">
-        <div className="hh-member-avatar">{client.name[0]}</div>
+        <div className="hh-member-avatar">{(client.full_name || "?")[0]}</div>
         <div className="hh-member-info">
-          <div className="hh-member-name">{client.name}</div>
+          <div className="hh-member-name">{client.full_name}</div>
           <div className="hh-member-rel">Primary</div>
         </div>
       </div>
@@ -111,7 +114,7 @@ function HouseholdPanel({ client }) {
 
           {expandedMember === m.id && (
             <div className="hh-member-notes">
-              {m.notes.length > 0 && (
+              {(m.notes || []).length > 0 && (
                 <div className="hh-notes-list">
                   {m.notes.map((n) => (
                     <div key={n.id} className="hh-note">
@@ -166,12 +169,12 @@ function HouseholdPanel({ client }) {
 
 // ── Overview Tab ──────────────────────────────────────────────
 
-function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, clientFiles, submissions = [] }) {
+function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, clientFiles, submissions = [], tasks, memories }) {
   // Build merged timeline from all sources
   const timeline = [
     ...clientMeetings.map((m) => ({
       type: "meeting",
-      date: m.date,
+      date: m.scheduled_at,
       label: `${m.meeting_type} meeting`,
       sub: `${m.duration_min} min · ${m.location || ""}`,
       color: MEETING_COLORS[m.meeting_type] || "#94a3b8",
@@ -186,7 +189,7 @@ function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, cli
     ...(clientNotes || []).map((n) => ({
       type: "note",
       date: n.created_at,
-      label: n.type === "ai_summary" ? "AI summary added" : "Note added",
+      label: n.note_type === "ai_summary" ? "AI summary added" : "Note added",
       sub: n.text.slice(0, 70) + (n.text.length > 70 ? "…" : ""),
       color: "#10b981",
     })),
@@ -204,8 +207,8 @@ function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, cli
   }
 
   const nextMeeting = clientMeetings
-    .filter((m) => new Date(m.date) > new Date())
-    .sort((a, b) => new Date(a.date) - new Date(b.date))[0];
+    .filter((m) => new Date(m.scheduled_at) > new Date())
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))[0];
 
   const pendingApprovals = clientApprovals.filter((a) => a.status === "pending").length;
 
@@ -233,7 +236,7 @@ function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, cli
           </div>
         </div>
 
-        {client.household_id && <HouseholdPanel client={client} />}
+        {client.household && <HouseholdPanel client={client} />}
 
         {submissions.length > 0 && (
           <div className="q-submission-card">
@@ -258,13 +261,46 @@ function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, cli
               {nextMeeting.meeting_type}
             </div>
             <div className="next-meeting-date">
-              {new Date(nextMeeting.date).toLocaleDateString("en-US", {
+              {new Date(nextMeeting.scheduled_at).toLocaleDateString("en-US", {
                 weekday: "short", month: "short", day: "numeric",
               })}{" "}
               at{" "}
-              {new Date(nextMeeting.date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              {new Date(nextMeeting.scheduled_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               {nextMeeting.location ? ` · ${nextMeeting.location}` : ""}
             </div>
+          </div>
+        )}
+
+        {/* Open Tasks */}
+        {tasks && tasks.length > 0 && (
+          <div className="tasks-panel">
+            <div className="tasks-panel-header">
+              <ClipboardList size={14} />
+              <span>Open Tasks</span>
+            </div>
+            {tasks.filter(t => t.status === "open").map(task => (
+              <div key={task.id} className="task-item">
+                <span className={`task-owner-badge ${task.owner_type}`}>{task.owner_type}</span>
+                <span className="task-title">{task.title}</span>
+                {task.due_date && <span className="task-due">{new Date(task.due_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Client Memory / Context */}
+        {memories && memories.length > 0 && (
+          <div className="memory-panel">
+            <div className="memory-panel-header">
+              <StickyNote size={14} />
+              <span>Client Context</span>
+            </div>
+            {memories.map(m => (
+              <div key={m.id} className="memory-item">
+                <span className="memory-key">{m.key.replace(/_/g, " ")}</span>
+                <span className="memory-value">{m.value}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -297,10 +333,235 @@ function OverviewTab({ client, clientMeetings, clientApprovals, clientNotes, cli
   );
 }
 
+// ── Transcript Modal ──────────────────────────────────────────
+
+function TranscriptModal({ meeting, clientId, onClose, onProcessingStart, onProcessingDone }) {
+  const [tab, setTab] = useState("paste"); // "paste" | "file"
+  const [text, setText] = useState("");
+  const [file, setFile] = useState(null);
+  const [status, setStatus] = useState("idle"); // "idle" | "saving" | "processing" | "done" | "error"
+  const [error, setError] = useState("");
+  const pollRef = useRef(null);
+
+  async function handleProcess() {
+    if (tab === "paste" && !text.trim()) return;
+    if (tab === "file" && !file) return;
+
+    setStatus("saving");
+    setError("");
+
+    try {
+      // Step 1: Save transcript to meeting
+      if (tab === "paste") {
+        await apiFetch(`/meetings/${meeting.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ transcript_text: text.trim() }),
+        });
+      } else {
+        // File upload via /documents/upload/
+        const formData = new FormData();
+        formData.append("client", clientId);
+        formData.append("meeting", meeting.id);
+        formData.append("file", file);
+        await apiUpload("/documents/upload/", formData);
+        // Also read file text and patch the meeting
+        const fileText = await file.text();
+        await apiFetch(`/meetings/${meeting.id}/`, {
+          method: "PATCH",
+          body: JSON.stringify({ transcript_text: fileText }),
+        });
+      }
+
+      // Step 2: Trigger processing
+      setStatus("processing");
+      onProcessingStart(meeting.id);
+      await apiFetch(`/meetings/${meeting.id}/process/`, { method: "POST" });
+
+      // Step 3: Poll agent logs for completion
+      let attempts = 0;
+      pollRef.current = setInterval(async () => {
+        attempts++;
+        try {
+          const logs = await apiFetch(`/agent-logs/?client_id=${clientId}&ordering=-created_at&page_size=5`);
+          const results = Array.isArray(logs) ? logs : (logs.results || []);
+          const done = results.find(l => l.status === "complete" || l.status === "failed");
+          if (done || attempts > 30) { // max ~2 min
+            clearInterval(pollRef.current);
+            setStatus("done");
+            onProcessingDone(meeting.id);
+          }
+        } catch (_) {}
+      }, 4000);
+    } catch (err) {
+      setStatus("error");
+      setError(err.message || "Failed to process transcript.");
+    }
+  }
+
+  // Cleanup poll on unmount
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
+  return (
+    <div className="modal-overlay" onClick={status === "idle" ? onClose : undefined}>
+      <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>Add Transcript</h2>
+          {status === "idle" && <button className="icon-btn" onClick={onClose}><X size={16} /></button>}
+        </div>
+        <div className="modal-form">
+          <p className="transcript-meeting-label">
+            {meeting.meeting_type} · {new Date(meeting.scheduled_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </p>
+
+          {status === "idle" && (
+            <>
+              <div className="transcript-tabs">
+                <button className={`transcript-tab${tab === "paste" ? " active" : ""}`} onClick={() => setTab("paste")}>Paste Text</button>
+                <button className={`transcript-tab${tab === "file" ? " active" : ""}`} onClick={() => setTab("file")}>Upload File</button>
+              </div>
+              {tab === "paste" ? (
+                <textarea
+                  className="note-textarea"
+                  rows={10}
+                  placeholder="Paste the meeting transcript here..."
+                  value={text}
+                  onChange={e => setText(e.target.value)}
+                  style={{ minHeight: 200 }}
+                />
+              ) : (
+                <div className="file-drop-area" onClick={() => document.getElementById("transcript-file-input").click()}>
+                  <input
+                    id="transcript-file-input"
+                    type="file"
+                    accept=".txt,.vtt,.srt"
+                    style={{ display: "none" }}
+                    onChange={e => setFile(e.target.files[0])}
+                  />
+                  {file ? (
+                    <span className="file-selected"><FileText size={16} /> {file.name}</span>
+                  ) : (
+                    <span className="file-drop-hint"><Upload size={20} /><br />Click to select .txt, .vtt, or .srt file</span>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {status === "saving" && <div className="processing-status"><Clock size={16} /> Saving transcript…</div>}
+          {status === "processing" && (
+            <div className="processing-status">
+              <Clock size={16} /> Processing with AI… this may take 30–60 seconds.
+              <p className="processing-sub">Scribe is reading the transcript and generating drafts for the Approval Queue.</p>
+            </div>
+          )}
+          {status === "done" && (
+            <div className="processing-done">
+              <CheckCircle size={24} style={{ color: "#10b981" }} />
+              <p>Drafts are ready in the <strong>Approval Queue</strong>.</p>
+              <button className="btn btn-primary" onClick={onClose}>Done</button>
+            </div>
+          )}
+          {status === "error" && (
+            <div>
+              <div className="form-error">{error}</div>
+              <button className="btn btn-ghost" onClick={() => setStatus("idle")}>Try Again</button>
+            </div>
+          )}
+        </div>
+        {status === "idle" && (
+          <div className="modal-actions">
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary"
+              onClick={handleProcess}
+              disabled={(tab === "paste" && !text.trim()) || (tab === "file" && !file)}>
+              Process with AI
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── New Meeting Modal ─────────────────────────────────────────
+
+function NewMeetingModal({ clientId, onClose, onCreated }) {
+  const MEETING_TYPES = ["Discovery", "LEAP Process", "Implementation", "Solera Heartbeat", "30-Day Check-In", "Other"];
+  const [form, setForm] = useState({
+    meeting_type: "Discovery",
+    scheduled_at: "",
+    duration_min: 60,
+    location: "Zoom",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.scheduled_at) { setError("Date and time required."); return; }
+    setSaving(true);
+    try {
+      const meeting = await apiFetch("/meetings/", {
+        method: "POST",
+        body: JSON.stringify({ ...form, client: clientId }),
+      });
+      onCreated(meeting);
+    } catch (err) {
+      setError(err.message || "Failed to create meeting.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2>New Meeting</h2>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+        <form className="modal-form" onSubmit={handleSubmit}>
+          <div className="form-row">
+            <label>Meeting Type</label>
+            <select className="form-input" value={form.meeting_type} onChange={e => setForm(p => ({ ...p, meeting_type: e.target.value }))}>
+              {MEETING_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div className="form-row">
+            <label>Date & Time</label>
+            <input className="form-input" type="datetime-local" value={form.scheduled_at}
+              onChange={e => setForm(p => ({ ...p, scheduled_at: e.target.value }))} />
+          </div>
+          <div className="form-row-2">
+            <div className="form-row">
+              <label>Duration (min)</label>
+              <input className="form-input" type="number" min={15} max={240} step={15} value={form.duration_min}
+                onChange={e => setForm(p => ({ ...p, duration_min: parseInt(e.target.value) }))} />
+            </div>
+            <div className="form-row">
+              <label>Location</label>
+              <input className="form-input" placeholder="Zoom" value={form.location}
+                onChange={e => setForm(p => ({ ...p, location: e.target.value }))} />
+            </div>
+          </div>
+          {error && <div className="form-error">{error}</div>}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? "Creating…" : "Create Meeting"}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Meetings Tab ──────────────────────────────────────────────
 
-function MeetingsTab({ clientMeetings }) {
+function MeetingsTab({ clientId, clientMeetings, setClientMeetings, meetingsLoading }) {
   const [expanded, setExpanded] = useState(null);
+  const [showNewMeeting, setShowNewMeeting] = useState(false);
+  const [transcriptModal, setTranscriptModal] = useState(null); // meeting object or null
+  const [processingId, setProcessingId] = useState(null); // meeting.id being processed
+  const [processDone, setProcessDone] = useState({}); // { [meetingId]: true }
 
   function formatDateTime(iso) {
     return new Date(iso).toLocaleDateString("en-US", {
@@ -309,69 +570,115 @@ function MeetingsTab({ clientMeetings }) {
     });
   }
 
-  const sorted = [...clientMeetings].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sorted = [...clientMeetings].sort((a, b) => new Date(b.scheduled_at) - new Date(a.scheduled_at));
   const isPast = (date) => new Date(date) < new Date();
 
-  if (sorted.length === 0) {
-    return <p className="empty-state">No meetings on record for this client.</p>;
+  if (meetingsLoading) {
+    return <p className="empty-state">Loading meetings…</p>;
   }
 
   return (
     <div className="meetings-tab">
-      {sorted.map((m) => {
-        const past = isPast(m.date);
-        return (
-          <div key={m.id} className="meeting-record">
-            <div
-              className="meeting-record-header"
-              onClick={() => setExpanded(expanded === m.id ? null : m.id)}
-            >
-              <div className="meeting-record-left">
-                <div
-                  className="meeting-type-pill"
-                  style={{ background: (MEETING_COLORS[m.meeting_type] || "#94a3b8") + "22", color: MEETING_COLORS[m.meeting_type] || "#94a3b8" }}
-                >
-                  {m.meeting_type}
+      <div className="meetings-tab-header">
+        <button className="btn btn-primary btn-sm" onClick={() => setShowNewMeeting(true)}>
+          <Plus size={14} /> New Meeting
+        </button>
+      </div>
+
+      {showNewMeeting && (
+        <NewMeetingModal
+          clientId={clientId}
+          onClose={() => setShowNewMeeting(false)}
+          onCreated={(newMeeting) => {
+            setClientMeetings(prev => [newMeeting, ...prev]);
+            setShowNewMeeting(false);
+          }}
+        />
+      )}
+
+      {sorted.length === 0 ? (
+        <p className="empty-state">No meetings on record for this client.</p>
+      ) : (
+        sorted.map((m) => {
+          const past = isPast(m.scheduled_at);
+          return (
+            <div key={m.id} className="meeting-record">
+              <div
+                className="meeting-record-header"
+                onClick={() => setExpanded(expanded === m.id ? null : m.id)}
+              >
+                <div className="meeting-record-left">
+                  <div
+                    className="meeting-type-pill"
+                    style={{ background: (MEETING_COLORS[m.meeting_type] || "#94a3b8") + "22", color: MEETING_COLORS[m.meeting_type] || "#94a3b8" }}
+                  >
+                    {m.meeting_type}
+                  </div>
+                  <div>
+                    <div className="meeting-record-date">{formatDateTime(m.scheduled_at)}</div>
+                    <div className="meeting-record-meta">
+                      {m.duration_min} min{m.location ? ` · ${m.location}` : ""}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="meeting-record-date">{formatDateTime(m.date)}</div>
-                  <div className="meeting-record-meta">
-                    {m.duration_min} min{m.location ? ` · ${m.location}` : ""}
+                <div className="meeting-record-right">
+                  {past ? (
+                    <span className="badge-status complete"><CheckCircle size={12} /> Past</span>
+                  ) : (
+                    <span className="badge-status upcoming"><Clock size={12} /> Upcoming</span>
+                  )}
+                  <div className="meeting-record-actions" onClick={e => e.stopPropagation()}>
+                    {m.processed ? (
+                      <span className="badge-processed"><CheckCircle size={12} /> Processed</span>
+                    ) : (
+                      processingId === m.id ? (
+                        <span className="processing-badge"><Clock size={12} /> Processing…</span>
+                      ) : processDone[m.id] ? (
+                        <span className="badge-processed"><CheckCircle size={12} /> Drafts ready</span>
+                      ) : (
+                        <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); setTranscriptModal(m); }}>
+                          Add Transcript
+                        </button>
+                      )
+                    )}
                   </div>
                 </div>
               </div>
-              <div className="meeting-record-right">
-                {past ? (
-                  <span className="badge-status complete"><CheckCircle size={12} /> Past</span>
-                ) : (
-                  <span className="badge-status upcoming"><Clock size={12} /> Upcoming</span>
-                )}
-              </div>
+              {expanded === m.id && (m.transcript_text || m.leap_notes_text) && (
+                <div className="meeting-record-body">
+                  {m.transcript_text && (
+                    <>
+                      <div className="notes-section-label">Meeting Transcript / Notes</div>
+                      <pre className="meeting-notes-text">{m.transcript_text}</pre>
+                    </>
+                  )}
+                  {m.leap_notes_text && (
+                    <>
+                      <div className="notes-section-label">LEAP Notes</div>
+                      <pre className="meeting-notes-text">{m.leap_notes_text}</pre>
+                    </>
+                  )}
+                </div>
+              )}
+              {expanded === m.id && !m.transcript_text && !m.leap_notes_text && (
+                <div className="meeting-record-body">
+                  <p className="empty-state">No notes or transcript attached to this meeting.</p>
+                </div>
+              )}
             </div>
-            {expanded === m.id && (m.transcript_text || m.leap_notes_text) && (
-              <div className="meeting-record-body">
-                {m.transcript_text && (
-                  <>
-                    <div className="notes-section-label">Meeting Transcript / Notes</div>
-                    <pre className="meeting-notes-text">{m.transcript_text}</pre>
-                  </>
-                )}
-                {m.leap_notes_text && (
-                  <>
-                    <div className="notes-section-label">LEAP Notes</div>
-                    <pre className="meeting-notes-text">{m.leap_notes_text}</pre>
-                  </>
-                )}
-              </div>
-            )}
-            {expanded === m.id && !m.transcript_text && !m.leap_notes_text && (
-              <div className="meeting-record-body">
-                <p className="empty-state">No notes or transcript attached to this meeting.</p>
-              </div>
-            )}
-          </div>
-        );
-      })}
+          );
+        })
+      )}
+
+      {transcriptModal && (
+        <TranscriptModal
+          meeting={transcriptModal}
+          clientId={clientId}
+          onClose={() => setTranscriptModal(null)}
+          onProcessingStart={(id) => setProcessingId(id)}
+          onProcessingDone={(id) => { setProcessingId(null); setProcessDone(prev => ({ ...prev, [id]: true })); setTranscriptModal(null); }}
+        />
+      )}
     </div>
   );
 }
@@ -393,15 +700,26 @@ function EmailsTab({ clientApprovals }) {
 
 // ── Notes Tab ─────────────────────────────────────────────────
 
-function NotesTab({ clientId }) {
-  const { clientNotes, addClientNote } = useApp();
-  const [draft, setDraft] = useState("");
-  const notes = (clientNotes[clientId] || []).slice().reverse();
+const NOTE_MAX = 5000;
 
-  function handleAdd() {
-    if (!draft.trim()) return;
-    addClientNote(clientId, draft.trim());
-    setDraft("");
+function NotesTab({ notes, notesLoading, onAddNote }) {
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleAdd() {
+    const text = draft.trim();
+    if (!text || text.length > NOTE_MAX) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onAddNote(text);
+      setDraft("");
+    } catch (err) {
+      setError(err.message || "Failed to save note.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   function formatDate(iso) {
@@ -409,6 +727,9 @@ function NotesTab({ clientId }) {
       month: "short", day: "numeric", year: "numeric",
     });
   }
+
+  const remaining = NOTE_MAX - draft.length;
+  const overLimit = draft.length > NOTE_MAX;
 
   return (
     <div className="notes-tab">
@@ -420,12 +741,24 @@ function NotesTab({ clientId }) {
           onChange={(e) => setDraft(e.target.value)}
           rows={3}
         />
-        <button className="btn btn-primary" onClick={handleAdd} disabled={!draft.trim()}>
-          Add Note
-        </button>
+        <div className="note-add-footer">
+          <span className={`note-char-count${overLimit ? " over-limit" : remaining < 200 ? " near-limit" : ""}`}>
+            {draft.length}/{NOTE_MAX}
+          </span>
+          <button
+            className="btn btn-primary"
+            onClick={handleAdd}
+            disabled={!draft.trim() || overLimit || saving}
+          >
+            {saving ? "Saving…" : "Add Note"}
+          </button>
+        </div>
+        {error && <div className="form-error">{error}</div>}
       </div>
       <div className="notes-list">
-        {notes.length === 0 ? (
+        {notesLoading ? (
+          <p className="empty-state">Loading notes…</p>
+        ) : notes.length === 0 ? (
           <p className="empty-state">No notes yet.</p>
         ) : (
           notes.map((note) => (
@@ -433,9 +766,6 @@ function NotesTab({ clientId }) {
               <div className="note-meta">
                 <span className="note-author">{note.author}</span>
                 <span className="note-date">{formatDate(note.created_at)}</span>
-                <span className={`note-type-badge ${note.type}`}>
-                  {note.type.replace(/_/g, " ")}
-                </span>
               </div>
               <p className="note-text">{note.text}</p>
             </div>
@@ -531,7 +861,7 @@ function SendQuestionnaireModal({ client, onClose }) {
                   <div className="q-ep-row"><strong>To:</strong> {email || "(enter email above)"}</div>
                   <div className="q-ep-row"><strong>Subject:</strong> Your Solera Financial Questionnaire</div>
                   <div className="q-ep-body">
-                    Hi {client.name},
+                    Hi {client.full_name},
                     <br /><br />
                     Please complete your financial questionnaire using the secure link below:
                     <br /><br />
@@ -564,12 +894,109 @@ function SendQuestionnaireModal({ client, onClose }) {
 export default function ClientProfile({ onOpenChat }) {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { approvals, clientNotes, clientFiles, getSubmissionsForClient } = useApp();
+  const { clientFiles, getSubmissionsForClient } = useApp();
   const [activeTab, setActiveTab] = useState("Overview");
   const [showQModal, setShowQModal] = useState(false);
 
-  // Look in both static clients and any newly added clients
-  const client = clients.find((c) => c.id === id);
+  // Fetch client from real API
+  const [client, setClient] = useState(null);
+  const [clientLoading, setClientLoading] = useState(true);
+
+  useEffect(() => {
+    setClientLoading(true);
+    setClient(null);
+    apiFetch(`/clients/${id}/`)
+      .then((data) => setClient(data))
+      .catch(() => setClient(false))
+      .finally(() => setClientLoading(false));
+  }, [id]);
+
+  // Notes — fetched from real API, shared between Overview and Notes tabs
+  const [notes, setNotes] = useState([]);
+  const [notesLoading, setNotesLoading] = useState(true);
+
+  useEffect(() => {
+    setNotesLoading(true);
+    apiFetch(`/clients/${id}/notes/`)
+      .then((data) => setNotes(Array.isArray(data) ? data : (data.results || [])))
+      .catch(() => setNotes([]))
+      .finally(() => setNotesLoading(false));
+  }, [id]);
+
+  // Meetings — fetched from real API
+  const [clientMeetings, setClientMeetings] = useState([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
+
+  useEffect(() => {
+    setMeetingsLoading(true);
+    apiFetch(`/clients/${id}/meetings/`)
+      .then(data => setClientMeetings(Array.isArray(data) ? data : (data.results || [])))
+      .catch(() => setClientMeetings([]))
+      .finally(() => setMeetingsLoading(false));
+  }, [id]);
+
+  // Tasks and memories
+  const [tasks, setTasks] = useState([]);
+  const [memories, setMemories] = useState([]);
+  const [taskAiResults, setTaskAiResults] = useState({});
+
+  useEffect(() => {
+    apiFetch(`/clients/${id}/tasks/`).then(d => setTasks(Array.isArray(d) ? d : (d.results || []))).catch(() => {});
+    apiFetch(`/clients/${id}/memories/`).then(d => setMemories(Array.isArray(d) ? d : (d.results || []))).catch(() => {});
+  }, [id]);
+
+  async function markTaskDone(taskId) {
+    try {
+      await apiFetch(`/clients/${id}/tasks/${taskId}/`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "done" }),
+      });
+      setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "done" } : t));
+    } catch (e) {
+      alert(`Could not update task: ${e.message}`);
+    }
+  }
+
+  async function handleTaskAskAi(task) {
+    try {
+      const data = await apiFetch("/chat/messages/", {
+        method: "POST",
+        body: JSON.stringify({
+          session_id: `task-${task.id}`,
+          content: `What's the best way to complete this action item? Task: "${task.title}" (owner: ${task.owner_type})`,
+          client_id: id,
+        }),
+      });
+      setTaskAiResults(prev => ({ ...prev, [task.id]: data.assistant.content }));
+    } catch (e) {
+      setTaskAiResults(prev => ({ ...prev, [task.id]: `[Error: ${e.message}]` }));
+    }
+  }
+
+  // Approvals — fetched from real API
+  const [clientApprovals, setClientApprovals] = useState([]);
+
+  useEffect(() => {
+    apiFetch(`/clients/${id}/approvals/`)
+      .then(d => setClientApprovals(Array.isArray(d) ? d : (d.results || [])))
+      .catch(() => setClientApprovals([]));
+  }, [id]);
+
+  async function handleAddNote(text) {
+    const note = await apiFetch(`/clients/${id}/notes/`, {
+      method: "POST",
+      body: JSON.stringify({ text, note_type: "advisor_note" }),
+    });
+    setNotes((prev) => [note, ...prev]);
+  }
+
+  if (clientLoading) {
+    return (
+      <div className="page">
+        <div className="empty-state" style={{ marginTop: 80 }}>Loading client…</div>
+      </div>
+    );
+  }
 
   if (!client) {
     return (
@@ -584,13 +1011,8 @@ export default function ClientProfile({ onOpenChat }) {
     );
   }
 
-  const clientMeetings = [
-    ...meetings.filter((m) => m.client_id === id),
-    ...upcomingMeetings.filter((m) => m.client_id === id),
-  ];
-
-  const clientApprovals = approvals.filter((a) => a.client_id === id);
   const pendingCount = clientApprovals.filter((a) => a.status === "pending").length;
+  const firstName = (client.full_name || "").split(" ")[0] || "Client";
 
   return (
     <div className="page">
@@ -601,10 +1023,10 @@ export default function ClientProfile({ onOpenChat }) {
 
       {/* Client header */}
       <div className="client-profile-header">
-        <div className="client-profile-avatar">{client.name[0]}</div>
+        <div className="client-profile-avatar">{(client.full_name || "?")[0]}</div>
         <div className="client-profile-info">
           <div className="client-profile-name-row">
-            <h1>{client.name}</h1>
+            <h1>{client.full_name}</h1>
             {client.language_tag === "ru" && <span className="ru-tag">RU</span>}
           </div>
           <div className="client-profile-meta">
@@ -619,6 +1041,9 @@ export default function ClientProfile({ onOpenChat }) {
             </span>
             {client.wealthbox_id && (
               <span className="meta-sep">{client.wealthbox_id}</span>
+            )}
+            {client.owner_username && (
+              <span className="meta-sep">Advisor: {client.owner_username}</span>
             )}
             {pendingCount > 0 && (
               <span className="meta-pending">{pendingCount} pending approval{pendingCount > 1 ? "s" : ""}</span>
@@ -636,7 +1061,7 @@ export default function ClientProfile({ onOpenChat }) {
           </button>
           <button className="btn btn-primary" onClick={onOpenChat}>
             <MessageSquare size={15} />
-            Ask AI about {client.name.split(" ")[0]}
+            Ask AI about {firstName}
           </button>
         </div>
       </div>
@@ -656,11 +1081,14 @@ export default function ClientProfile({ onOpenChat }) {
             {tab === "Meetings" && clientMeetings.length > 0 && (
               <span className="tab-count">{clientMeetings.length}</span>
             )}
-            {tab === "Notes" && (clientNotes[id] || []).length > 0 && (
-              <span className="tab-count">{(clientNotes[id] || []).length}</span>
+            {tab === "Notes" && notes.length > 0 && (
+              <span className="tab-count">{notes.length}</span>
             )}
             {tab === "Files" && (clientFiles[id] || []).length > 0 && (
               <span className="tab-count">{(clientFiles[id] || []).length}</span>
+            )}
+            {tab === "Tasks" && tasks.filter(t => t.status === "open").length > 0 && (
+              <span className="tab-count">{tasks.filter(t => t.status === "open").length}</span>
             )}
           </button>
         ))}
@@ -672,15 +1100,85 @@ export default function ClientProfile({ onOpenChat }) {
           client={client}
           clientMeetings={clientMeetings}
           clientApprovals={clientApprovals}
-          clientNotes={clientNotes[id]}
+          clientNotes={notes}
           clientFiles={clientFiles[id]}
           submissions={getSubmissionsForClient(id)}
+          tasks={tasks}
+          memories={memories}
         />
       )}
-      {activeTab === "Meetings" && <MeetingsTab clientMeetings={clientMeetings} />}
+      {activeTab === "Meetings" && (
+        <MeetingsTab
+          clientId={id}
+          clientMeetings={clientMeetings}
+          setClientMeetings={setClientMeetings}
+          meetingsLoading={meetingsLoading}
+        />
+      )}
       {activeTab === "Emails" && <EmailsTab clientApprovals={clientApprovals} />}
-      {activeTab === "Notes" && <NotesTab clientId={id} />}
+      {activeTab === "Notes" && (
+        <NotesTab notes={notes} notesLoading={notesLoading} onAddNote={handleAddNote} />
+      )}
       {activeTab === "Files" && <FilesTab clientId={id} />}
+
+      {activeTab === "Tasks" && (() => {
+        const openTasks = tasks.filter(t => t.status === "open");
+        const doneTasks = tasks.filter(t => t.status === "done");
+        function fmtDate(d) {
+          return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        }
+        return (
+          <div className="tasks-tab">
+            <h3 className="tasks-tab-heading">Open Tasks</h3>
+            {openTasks.length === 0 && (
+              <p className="empty-state">No open tasks. Approve action items in the Approval Queue to populate tasks.</p>
+            )}
+            {openTasks.map(task => (
+              <div key={task.id} className="task-card-full">
+                <div className="task-card-left">
+                  <span className={`task-owner-badge ${task.owner_type}`}>{task.owner_type}</span>
+                  <span className="task-title">{task.title}</span>
+                  {task.due_date && <span className="task-due">Due {fmtDate(task.due_date)}</span>}
+                </div>
+                <div className="task-card-actions">
+                  <button
+                    className="btn btn-ghost btn-xs"
+                    onClick={() => handleTaskAskAi(task)}
+                    title="Ask AI for guidance on this task"
+                  >
+                    <Sparkles size={13} /> Ask AI
+                  </button>
+                  <button
+                    className="btn btn-approve btn-xs"
+                    onClick={() => markTaskDone(task.id)}
+                    title="Mark as done"
+                  >
+                    <Check size={13} /> Done
+                  </button>
+                </div>
+                {taskAiResults[task.id] && (
+                  <div className="task-ai-suggestion">{taskAiResults[task.id]}</div>
+                )}
+              </div>
+            ))}
+
+            {doneTasks.length > 0 && (
+              <details className="done-tasks-section">
+                <summary>Completed ({doneTasks.length})</summary>
+                <div style={{ marginTop: 8 }}>
+                  {doneTasks.map(task => (
+                    <div key={task.id} className="task-card-full done">
+                      <span className={`task-owner-badge ${task.owner_type}`}>{task.owner_type}</span>
+                      <span className="task-title task-title-done">{task.title}</span>
+                      {task.due_date && <span className="task-due">Due {fmtDate(task.due_date)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        );
+      })()}
 
       {showQModal && (
         <SendQuestionnaireModal client={client} onClose={() => setShowQModal(false)} />

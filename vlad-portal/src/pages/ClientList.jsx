@@ -1,8 +1,11 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
-import { Search, Plus, X, ChevronUp, ChevronDown, Flag, LayoutGrid, List, Users } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  Search, Plus, X, ChevronUp, ChevronDown, Flag,
+  LayoutGrid, List, Users, ChevronLeft, ChevronRight,
+} from "lucide-react";
 import { useApp } from "../context/AppContext";
-import { households } from "../data/mockData";
+import { apiFetch } from "../api/client";
 
 const STAGES = ["All", "Discovery", "LEAP Process", "Implementation", "Solera Heartbeat"];
 
@@ -13,31 +16,82 @@ const STAGE_COLORS = {
   "Solera Heartbeat": "#10b981",
 };
 
-const ADVISORS = ["vlad", "slava"];
+// ── Error parser ──────────────────────────────────────────────
+
+function parseApiError(err) {
+  if (err.data && typeof err.data === "object" && !err.data.detail) {
+    const messages = [];
+    function walk(obj, prefix) {
+      for (const [k, v] of Object.entries(obj)) {
+        const label = (prefix ? `${prefix} › ` : "") + k.replace(/_/g, " ");
+        if (Array.isArray(v)) messages.push(`${label}: ${v.join(", ")}`);
+        else if (v && typeof v === "object") walk(v, label);
+      }
+    }
+    walk(err.data, "");
+    if (messages.length) return messages.join("\n");
+  }
+  return err.message || "Failed to create client.";
+}
 
 // ── New Client Modal ──────────────────────────────────────────
 
-function NewClientModal({ onClose, onSave }) {
+function NewClientModal({ onClose }) {
+  const navigate = useNavigate();
   const [form, setForm] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
-    assigned_advisor: "vlad",
     meeting_stage: "Discovery",
     language_tag: null,
+    addressLine1: "",
+    city: "",
+    state: "",
+    zip: "",
   });
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   function handleChange(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim()) { setError("Name is required."); return; }
+    if (!form.firstName.trim()) { setError("First name is required."); return; }
+    if (!form.lastName.trim()) { setError("Last name is required."); return; }
     if (!form.email.trim()) { setError("Email is required."); return; }
-    onSave(form);
-    onClose();
+
+    const payload = {
+      first_name: form.firstName.trim(),
+      last_name: form.lastName.trim(),
+      email: form.email.trim(),
+      phone: form.phone.trim(),
+      meeting_stage: form.meeting_stage,
+      language_tag: form.language_tag || "",
+    };
+    if (form.addressLine1.trim()) {
+      payload.address = {
+        address_line1: form.addressLine1.trim(),
+        city: form.city.trim(),
+        state: form.state.trim(),
+        zip_code: form.zip.trim(),
+      };
+    }
+
+    setSaving(true);
+    try {
+      const newClient = await apiFetch("/clients/", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      onClose();
+      navigate(`/clients/${newClient.id}`);
+    } catch (err) {
+      setError(parseApiError(err));
+      setSaving(false);
+    }
   }
 
   return (
@@ -48,10 +102,17 @@ function NewClientModal({ onClose, onSave }) {
           <button className="icon-btn" onClick={onClose}><X size={16} /></button>
         </div>
         <form className="modal-form" onSubmit={handleSubmit}>
-          <div className="form-row">
-            <label>Full Name *</label>
-            <input className="form-input" placeholder="e.g. Jane Smith" value={form.name}
-              onChange={(e) => handleChange("name", e.target.value)} />
+          <div className="form-row-2">
+            <div className="form-row">
+              <label>First Name *</label>
+              <input className="form-input" placeholder="Jane" value={form.firstName}
+                onChange={(e) => handleChange("firstName", e.target.value)} />
+            </div>
+            <div className="form-row">
+              <label>Last Name *</label>
+              <input className="form-input" placeholder="Smith" value={form.lastName}
+                onChange={(e) => handleChange("lastName", e.target.value)} />
+            </div>
           </div>
           <div className="form-row">
             <label>Email *</label>
@@ -63,25 +124,36 @@ function NewClientModal({ onClose, onSave }) {
             <input className="form-input" placeholder="(555) 555-0000" value={form.phone}
               onChange={(e) => handleChange("phone", e.target.value)} />
           </div>
-          <div className="form-row-2">
+          <div className="form-row">
+            <label>Address</label>
+            <input className="form-input" placeholder="Street address" value={form.addressLine1}
+              onChange={(e) => handleChange("addressLine1", e.target.value)} />
+          </div>
+          <div className="form-row-3">
             <div className="form-row">
-              <label>Assigned Advisor</label>
-              <select className="form-input" value={form.assigned_advisor}
-                onChange={(e) => handleChange("assigned_advisor", e.target.value)}>
-                {ADVISORS.map((a) => (
-                  <option key={a} value={a}>{a.charAt(0).toUpperCase() + a.slice(1)}</option>
-                ))}
-              </select>
+              <label>City</label>
+              <input className="form-input" placeholder="City" value={form.city}
+                onChange={(e) => handleChange("city", e.target.value)} />
             </div>
             <div className="form-row">
-              <label>Meeting Stage</label>
-              <select className="form-input" value={form.meeting_stage}
-                onChange={(e) => handleChange("meeting_stage", e.target.value)}>
-                {STAGES.filter((s) => s !== "All").map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
+              <label>State</label>
+              <input className="form-input" placeholder="CA" value={form.state}
+                onChange={(e) => handleChange("state", e.target.value)} />
             </div>
+            <div className="form-row">
+              <label>Zip</label>
+              <input className="form-input" placeholder="94105" value={form.zip}
+                onChange={(e) => handleChange("zip", e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row">
+            <label>Meeting Stage</label>
+            <select className="form-input" value={form.meeting_stage}
+              onChange={(e) => handleChange("meeting_stage", e.target.value)}>
+              {STAGES.filter((s) => s !== "All").map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
           <div className="form-row form-check-row">
             <label className="check-label">
@@ -93,7 +165,9 @@ function NewClientModal({ onClose, onSave }) {
           {error && <div className="form-error">{error}</div>}
           <div className="modal-actions">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary">Add Client</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? "Saving…" : "Add Client"}
+            </button>
           </div>
         </form>
       </div>
@@ -101,9 +175,39 @@ function NewClientModal({ onClose, onSave }) {
   );
 }
 
+// ── Pagination ────────────────────────────────────────────────
+
+function Pagination({ page, total, pageSize, onPage }) {
+  if (total <= pageSize) return null;
+  const totalPages = Math.ceil(total / pageSize);
+  const from = (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="pagination">
+      <button
+        className="pagination-btn"
+        onClick={() => onPage(page - 1)}
+        disabled={page === 1}
+      >
+        <ChevronLeft size={15} /> Prev
+      </button>
+      <span className="pagination-info">
+        {from}–{to} of {total} clients · page {page} of {totalPages}
+      </span>
+      <button
+        className="pagination-btn"
+        onClick={() => onPage(page + 1)}
+        disabled={page === totalPages}
+      >
+        Next <ChevronRight size={15} />
+      </button>
+    </div>
+  );
+}
+
 // ── Card View ─────────────────────────────────────────────────
 
-function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
+function CardView({ clients, getPendingCount }) {
   if (clients.length === 0) {
     return <div className="empty-state-full">No clients match your search.</div>;
   }
@@ -111,8 +215,6 @@ function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
     <div className="client-grid">
       {clients.map((client) => {
         const pending = getPendingCount(client.id);
-        const household = getHousehold(client);
-        const memberCount = getMemberCount(client);
         const days = client.last_contact_date
           ? Math.round((new Date() - new Date(client.last_contact_date)) / 86400000)
           : null;
@@ -122,9 +224,9 @@ function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
           <Link key={client.id} to={`/clients/${client.id}`}
             className={`client-card${pending > 0 ? " client-card-attention" : ""}`}>
             <div className="client-card-top">
-              <div className="client-avatar-lg">{client.name[0]}</div>
+              <div className="client-avatar-lg">{(client.full_name || "?")[0]}</div>
               <div className="client-card-info">
-                <div className="client-card-name">{client.name}</div>
+                <div className="client-card-name">{client.full_name}</div>
                 <div className="client-stage-badge"
                   style={{ color: STAGE_COLORS[client.meeting_stage] || "#94a3b8" }}>
                   {client.meeting_stage}
@@ -132,9 +234,9 @@ function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
               </div>
               <div className="client-card-flags">
                 {client.language_tag === "ru" && <span className="ru-tag">RU</span>}
-                {household && (
-                  <span className="household-badge" title={household.name}>
-                    <Users size={10} /> {memberCount + 1}
+                {client.household_name && (
+                  <span className="household-badge" title={client.household_name}>
+                    <Users size={10} />
                   </span>
                 )}
               </div>
@@ -149,11 +251,11 @@ function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
                   {isStale && " · stale"}
                 </span>
               </div>
-              {client.assigned_advisor && (
+              {client.owner_username && (
                 <div className="client-meta-row">
                   <span className="client-meta-label">Advisor</span>
                   <span className="client-meta-val" style={{ textTransform: "capitalize" }}>
-                    {client.assigned_advisor}
+                    {client.owner_username}
                   </span>
                 </div>
               )}
@@ -172,8 +274,8 @@ function CardView({ clients, getPendingCount, getHousehold, getMemberCount }) {
 
 // ── Table View ────────────────────────────────────────────────
 
-function TableView({ clients, getPendingCount, getHousehold, getMemberCount }) {
-  const [sortCol, setSortCol] = useState("name");
+function TableView({ clients, getPendingCount }) {
+  const [sortCol, setSortCol] = useState("full_name");
   const [sortDir, setSortDir] = useState("asc");
 
   function handleSort(col) {
@@ -215,10 +317,10 @@ function TableView({ clients, getPendingCount, getHousehold, getMemberCount }) {
         <thead>
           <tr>
             {[
-              { col: "name", label: "Client" },
+              { col: "full_name", label: "Client" },
               { col: "meeting_stage", label: "Stage" },
               { col: "last_contact_date", label: "Last Contact" },
-              { col: "assigned_advisor", label: "Advisor" },
+              { col: "owner_username", label: "Advisor" },
             ].map(({ col, label }) => (
               <th key={col} className="sortable-th" onClick={() => handleSort(col)}>
                 {label}<SortIcon col={col} />
@@ -242,19 +344,15 @@ function TableView({ clients, getPendingCount, getHousehold, getMemberCount }) {
               <tr key={client.id} className={`client-row${pending > 0 ? " client-row-attention" : ""}`}>
                 <td>
                   <Link to={`/clients/${client.id}`} className="client-row-name-link">
-                    <div className="client-row-avatar">{client.name[0]}</div>
+                    <div className="client-row-avatar">{(client.full_name || "?")[0]}</div>
                     <div>
                       <div className="client-row-name">
-                        {client.name}
-                        {(() => {
-                          const h = getHousehold(client);
-                          const mc = getMemberCount(client);
-                          return h ? (
-                            <span className="household-badge" title={h.name}>
-                              <Users size={10} /> {mc + 1}
-                            </span>
-                          ) : null;
-                        })()}
+                        {client.full_name}
+                        {client.household_name && (
+                          <span className="household-badge" title={client.household_name}>
+                            <Users size={10} />
+                          </span>
+                        )}
                       </div>
                       <div className="client-row-email">{client.email || "—"}</div>
                     </div>
@@ -276,7 +374,7 @@ function TableView({ clients, getPendingCount, getHousehold, getMemberCount }) {
                   {contactLabel}
                   {isStale && <span className="stale-badge">stale</span>}
                 </td>
-                <td style={{ textTransform: "capitalize" }}>{client.assigned_advisor || "—"}</td>
+                <td style={{ textTransform: "capitalize" }}>{client.owner_username || "—"}</td>
                 <td>
                   {pending > 0
                     ? <span className="pending-badge-sm">{pending} pending</span>
@@ -293,42 +391,80 @@ function TableView({ clients, getPendingCount, getHousehold, getMemberCount }) {
 
 // ── Main ──────────────────────────────────────────────────────
 
+const PAGE_SIZE = 20;
+
 export default function ClientList() {
-  const { approvals, allClients, addClient, getMembersForHousehold } = useApp();
+  const { approvals } = useApp();
+  const [clients, setClients] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("All");
   const [showModal, setShowModal] = useState(false);
-  const [view, setView] = useState("table"); // "table" | "card"
+  const [view, setView] = useState("table");
+
+  // Debounce search — only fire fetch after 300ms of no typing
+  const searchDebounceRef = useRef(null);
+
+  const fetchClients = useCallback(async (pg, q, stage) => {
+    setLoading(true);
+    try {
+      let url = `/clients/?page=${pg}&page_size=${PAGE_SIZE}`;
+      if (q)             url += `&search=${encodeURIComponent(q)}`;
+      if (stage !== "All") url += `&meeting_stage=${encodeURIComponent(stage)}`;
+      const data = await apiFetch(url);
+      // DRF paginated: { count, next, previous, results }
+      const results = Array.isArray(data) ? data : (data.results || []);
+      const count   = Array.isArray(data) ? data.length : (data.count || 0);
+      setClients(results);
+      setTotal(count);
+    } catch (err) {
+      console.error("Failed to load clients:", err);
+      setClients([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Re-fetch when page or stageFilter changes
+  useEffect(() => {
+    fetchClients(page, search, stageFilter);
+  }, [page, stageFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounce search — reset to page 1 on new search
+  function handleSearchChange(value) {
+    setSearch(value);
+    clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setPage(1);
+      fetchClients(1, value, stageFilter);
+    }, 300);
+  }
+
+  function handleStageFilter(stage) {
+    setStageFilter(stage);
+    setPage(1);
+  }
 
   function getPendingCount(clientId) {
     return approvals.filter((a) => a.client_id === clientId && a.status === "pending").length;
   }
 
-  function getHousehold(client) {
-    if (!client.household_id) return null;
-    return households.find((h) => h.id === client.household_id) || null;
-  }
-
-  function getMemberCount(client) {
-    if (!client.household_id) return 0;
-    return getMembersForHousehold(client.household_id).length;
-  }
-
-  // Only show primary contacts and singles — not linked members (they have no client record anyway)
-  const filtered = allClients.filter((c) => {
-    const matchesSearch =
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      (c.email || "").toLowerCase().includes(search.toLowerCase());
-    const matchesStage = stageFilter === "All" || c.meeting_stage === stageFilter;
-    return matchesSearch && matchesStage;
-  });
+  // Stage tab counts — from currently loaded page only (approximate for filtered views)
+  const stageCounts = STAGES.reduce((acc, s) => {
+    acc[s] = s === "All" ? total : clients.filter((c) => c.meeting_stage === s).length;
+    return acc;
+  }, {});
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
           <h1>Clients</h1>
-          <p className="subtitle">{allClients.length} client{allClients.length !== 1 ? "s" : ""} across your book of business</p>
+          <p className="subtitle">
+            {loading ? "Loading…" : `${total} client${total !== 1 ? "s" : ""} across your book of business`}
+          </p>
         </div>
         <div className="page-header-actions">
           <div className="client-search-wrap">
@@ -337,10 +473,18 @@ export default function ClientList() {
               className="client-search"
               placeholder="Search by name or email..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
+            {search && (
+              <button
+                className="search-clear-btn"
+                onClick={() => handleSearchChange("")}
+                title="Clear search"
+              >
+                <X size={13} />
+              </button>
+            )}
           </div>
-          {/* View toggle */}
           <div className="view-toggle">
             <button
               className={`view-toggle-btn${view === "table" ? " active" : ""}`}
@@ -367,22 +511,25 @@ export default function ClientList() {
         {STAGES.map((s) => (
           <button key={s}
             className={`filter-tab ${stageFilter === s ? "active" : ""}`}
-            onClick={() => setStageFilter(s)}>
+            onClick={() => handleStageFilter(s)}>
             {s}
-            <span className="tab-count">
-              {s === "All" ? allClients.length : allClients.filter((c) => c.meeting_stage === s).length}
-            </span>
+            <span className="tab-count">{stageCounts[s] ?? 0}</span>
           </button>
         ))}
       </div>
 
-      {view === "card"
-        ? <CardView clients={filtered} getPendingCount={getPendingCount} getHousehold={getHousehold} getMemberCount={getMemberCount} />
-        : <TableView clients={filtered} getPendingCount={getPendingCount} getHousehold={getHousehold} getMemberCount={getMemberCount} />
-      }
+      {loading ? (
+        <div className="clients-loading">Loading clients…</div>
+      ) : view === "card" ? (
+        <CardView clients={clients} getPendingCount={getPendingCount} />
+      ) : (
+        <TableView clients={clients} getPendingCount={getPendingCount} />
+      )}
+
+      <Pagination page={page} total={total} pageSize={PAGE_SIZE} onPage={setPage} />
 
       {showModal && (
-        <NewClientModal onClose={() => setShowModal(false)} onSave={addClient} />
+        <NewClientModal onClose={() => { setShowModal(false); fetchClients(page, search, stageFilter); }} />
       )}
     </div>
   );

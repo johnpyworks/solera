@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCP Connector Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3250;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --gray: #6b7280;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    header { text-align: center; margin-bottom: 2.5rem; }
+    header h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; }
+    header p { color: var(--text-muted); margin-top: 0.4rem; font-size: 0.95rem; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+      gap: 1.5rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-icon {
+      width: 40px; height: 40px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem; flex-shrink: 0;
+    }
+    .card-icon.zoom    { background: rgba(45,140,255,0.15); }
+    .card-icon.outlook { background: rgba(0,120,212,0.15); }
+    .card-icon.teams   { background: rgba(73,40,155,0.15); }
+    .card-icon.threecx { background: rgba(255,140,0,0.15); }
+
+    .card-title { flex: 1; }
+    .card-title h2 { font-size: 1.05rem; font-weight: 600; }
+    .card-title span { font-size: 0.78rem; color: var(--text-muted); }
+
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.25rem 0.65rem; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 500; white-space: nowrap;
+    }
+    .status-badge.connected    { background: rgba(34,197,94,0.15);  color: var(--green); }
+    .status-badge.unconfigured { background: rgba(107,114,128,0.15); color: var(--gray);  }
+    .status-badge.error        { background: rgba(239,68,68,0.15);   color: var(--red);   }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+    /* App type selector */
+    .type-selector {
+      display: flex;
+      gap: 0.5rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.3rem;
+    }
+
+    .type-btn {
+      flex: 1;
+      padding: 0.45rem 0.5rem;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      text-align: center;
+      line-height: 1.3;
+    }
+    .type-btn:active { transform: none; }
+    .type-btn.active {
+      background: #4f6ef7;
+      color: #fff;
+    }
+    .type-btn small { display: block; font-size: 0.7rem; opacity: 0.8; }
+
+    .card-body {
+      padding: 1.25rem 1.5rem;
+      display: flex; flex-direction: column; gap: 1rem;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 0.35rem; }
+    .field label {
+      font-size: 0.82rem; font-weight: 500;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .field input {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.55rem 0.8rem;
+      color: var(--text); font-size: 0.9rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      outline: none; transition: border-color 0.15s;
+    }
+    .field input:focus { border-color: #4f6ef7; }
+    .field input::placeholder { color: var(--gray); }
+    .field-hint { font-size: 0.76rem; color: var(--text-muted); }
+
+    .instructions { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .instructions-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.65rem 0.9rem; cursor: pointer;
+      background: var(--surface2); font-size: 0.83rem; font-weight: 500;
+      user-select: none; gap: 0.5rem;
+    }
+    .instructions-toggle:hover { background: var(--border); }
+    .chevron { transition: transform 0.2s; font-size: 0.7rem; color: var(--text-muted); }
+    .instructions-body {
+      display: none; padding: 0.9rem 1rem;
+      background: var(--bg); border-top: 1px solid var(--border);
+    }
+    .instructions-body.open { display: block; }
+    .instructions-body ol { padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.5rem; }
+    .instructions-body li { font-size: 0.84rem; color: var(--text-muted); line-height: 1.5; }
+    .instructions-body li strong { color: var(--text); }
+    .instructions-body a { color: #4f6ef7; text-decoration: none; }
+    .instructions-body a:hover { text-decoration: underline; }
+    .instructions-body code {
+      background: var(--surface2); padding: 0.1rem 0.35rem;
+      border-radius: 4px; font-size: 0.8rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    .warn-box {
+      display: flex; gap: 0.5rem;
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+      border-radius: 6px; padding: 0.6rem 0.75rem;
+      font-size: 0.8rem; color: var(--yellow); margin-top: 0.5rem;
+    }
+
+    .info-box {
+      display: flex; gap: 0.5rem;
+      background: rgba(79,110,247,0.1); border: 1px solid rgba(79,110,247,0.3);
+      border-radius: 6px; padding: 0.6rem 0.75rem;
+      font-size: 0.8rem; color: #818cf8;
+    }
+
+    .actions { display: flex; gap: 0.6rem; }
+
+    button {
+      padding: 0.55rem 1rem; border-radius: 8px; border: none;
+      font-size: 0.85rem; font-weight: 500; cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:active { transform: scale(0.97); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-save  { flex: 1; background: #4f6ef7; color: #fff; }
+    .btn-save:hover:not(:disabled) { opacity: 0.88; }
+
+    .btn-test  { flex: 1; background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-test:hover:not(:disabled) { border-color: #4f6ef7; color: #4f6ef7; }
+
+    .btn-connect {
+      flex: 1; background: #2d8cff; color: #fff;
+      display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+    }
+    .btn-connect:hover:not(:disabled) { opacity: 0.88; }
+
+    .btn-clear {
+      background: transparent; color: var(--red);
+      border: 1px solid rgba(239,68,68,0.3); padding: 0.55rem 0.7rem;
+    }
+    .btn-clear:hover:not(:disabled) { background: rgba(239,68,68,0.08); }
+
+    .result-box { border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.82rem; display: none; }
+    .result-box.success {
+      background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3);
+      color: var(--green); display: block;
+    }
+    .result-box.failure {
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+      color: var(--red); display: block;
+    }
+    .result-box.info {
+      background: rgba(79,110,247,0.1); border: 1px solid rgba(79,110,247,0.3);
+      color: #818cf8; display: block;
+    }
+    .next-step {
+      margin-top: 0.4rem; font-size: 0.78rem; color: var(--text-muted);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%) translateY(4rem);
+      background: #1e2236; border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.65rem 1.2rem;
+      font-size: 0.85rem; color: var(--text);
+      opacity: 0; transition: opacity 0.2s, transform 0.2s;
+      pointer-events: none; white-space: nowrap; z-index: 100;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>MCP Connector Dashboard</h1>
+  <p>Configure credentials for your MCP integrations — no .env editing required.</p>
+</header>
+
+<div class="cards">
+
+  <!-- ──────────── ZOOM CARD ──────────── -->
+  <div class="card" id="card-zoom">
+    <div class="card-header">
+      <div class="card-icon zoom">📹</div>
+      <div class="card-title">
+        <h2>Zoom</h2>
+        <span id="zoom-subtitle">Select your app type below</span>
+      </div>
+      <span class="status-badge unconfigured" id="badge-zoom">
+        <span class="status-dot"></span> Not configured
+      </span>
+    </div>
+
+    <div class="card-body">
+
+      <!-- App type selector -->
+      <div>
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.5rem;font-weight:500;">What type of Zoom app do you have?</div>
+        <div class="type-selector">
+          <button class="type-btn active" id="zoom-type-general" onclick="setZoomType('general')">
+            General App
+            <small>Free &amp; paid accounts</small>
+          </button>
+          <button class="type-btn" id="zoom-type-s2s" onclick="setZoomType('s2s')">
+            Server-to-Server OAuth
+            <small>Paid accounts / admins only</small>
+          </button>
+        </div>
+      </div>
+
+      <!-- Instructions (swapped by JS) -->
+      <div class="instructions">
+        <div class="instructions-toggle" onclick="toggleInstructions('zoom')">
+          <span>📋 How to find your Zoom credentials</span>
+          <span class="chevron" id="chevron-zoom">▼</span>
+        </div>
+        <div class="instructions-body" id="instructions-zoom">
+          <!-- filled by setZoomType() -->
+        </div>
+      </div>
+
+      <!-- General App fields -->
+      <div id="zoom-fields-general">
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>Client ID</label>
+          <input type="password" id="zoom-client-id" placeholder="Your Zoom Client ID" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>Client Secret</label>
+          <input type="password" id="zoom-client-secret" placeholder="Your Zoom Client Secret" autocomplete="off" />
+        </div>
+      </div>
+
+      <!-- Server-to-Server fields (hidden by default) -->
+      <div id="zoom-fields-s2s" style="display:none;">
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>Account ID</label>
+          <input type="password" id="zoom-account-id" placeholder="Your Zoom Account ID" autocomplete="off" />
+        </div>
+        <div class="field" style="margin-bottom:0.75rem;">
+          <label>Client ID</label>
+          <input type="password" id="zoom-s2s-client-id" placeholder="Your Zoom Client ID (ZOOM_API_KEY)" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>Client Secret</label>
+          <input type="password" id="zoom-s2s-client-secret" placeholder="Your Zoom Client Secret (ZOOM_API_SECRET)" autocomplete="off" />
+        </div>
+      </div>
+
+      <!-- General App actions -->
+      <div class="actions" id="zoom-actions-general">
+        <button class="btn-save" onclick="saveZoomGeneral()">Save</button>
+        <button class="btn-connect" id="zoom-connect-btn" onclick="connectZoomOAuth()">🔗 Connect with Zoom</button>
+        <button class="btn-clear" title="Clear credentials" onclick="clearCredentials('zoom')">✕</button>
+      </div>
+      <div class="actions" id="zoom-actions-general-test" style="display:none;">
+        <button class="btn-test" style="flex:1;" id="zoom-general-test-btn" onclick="testZoomGeneral()">Test Connection</button>
+      </div>
+
+      <!-- S2S actions -->
+      <div class="actions" id="zoom-actions-s2s" style="display:none;">
+        <button class="btn-save" onclick="saveZoomS2S()">Save</button>
+        <button class="btn-test" onclick="testZoomS2S()">Test Connection</button>
+        <button class="btn-clear" title="Clear credentials" onclick="clearCredentials('zoom')">✕</button>
+      </div>
+
+      <div class="result-box" id="result-zoom"></div>
+
+    </div>
+  </div>
+
+  <!-- ──────────── OUTLOOK CARD ──────────── -->
+  <div class="card" id="card-outlook">
+    <div class="card-header">
+      <div class="card-icon outlook">✉️</div>
+      <div class="card-title">
+        <h2>Outlook</h2>
+        <span>Microsoft Graph API — OAuth 2.0</span>
+      </div>
+      <span class="status-badge unconfigured" id="badge-outlook">
+        <span class="status-dot"></span> Not configured
+      </span>
+    </div>
+
+    <div class="card-body">
+
+      <div class="instructions">
+        <div class="instructions-toggle" onclick="toggleInstructions('outlook')">
+          <span>📋 How to find your Outlook credentials</span>
+          <span class="chevron" id="chevron-outlook">▼</span>
+        </div>
+        <div class="instructions-body" id="instructions-outlook">
+          <ol>
+            <li>Go to <a href="https://portal.azure.com" target="_blank">portal.azure.com</a> and sign in.</li>
+            <li>Search for <strong>Microsoft Entra ID</strong> → <strong>App registrations</strong> → <strong>New registration</strong>.</li>
+            <li>Name your app, set <strong>Redirect URI</strong> to <code>http://localhost:4000/auth/outlook/callback</code> (Web platform).</li>
+            <li>After creation, copy the <strong>Application (Client) ID</strong> and <strong>Directory (Tenant) ID</strong> from the <strong>Overview</strong> page.</li>
+            <li>Go to <strong>Certificates &amp; secrets → New client secret</strong>. Copy the secret <strong>Value</strong> (not the Secret ID).</li>
+            <li>Under <strong>API permissions → Add a permission → Microsoft Graph → Delegated</strong>, add:<br>
+                <code>User.Read</code> &nbsp;<code>Mail.Send</code> &nbsp;<code>Calendars.Read</code> &nbsp;<code>offline_access</code></li>
+            <li>Click <strong>Grant admin consent</strong> for your organization (same step as Teams — prevents the "justification required" prompt).</li>
+            <li>Save your credentials below, then click <strong>Connect with Microsoft</strong> to authorize.</li>
+          </ol>
+          <div class="warn-box">
+            ⚠️ Always copy the secret <strong>Value</strong>, not the Secret ID. The wrong field causes error AADSTS7000215.
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Application (Client) ID</label>
+        <input type="password" id="outlook-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+        <span class="field-hint">Azure Portal → App registrations → Overview</span>
+      </div>
+
+      <div class="field">
+        <label>Client Secret Value</label>
+        <input type="password" id="outlook-client-secret" placeholder="Your client secret value" autocomplete="off" />
+        <span class="field-hint">Certificates &amp; secrets → Value column (not the ID column)</span>
+      </div>
+
+      <div class="field">
+        <label>Directory (Tenant) ID</label>
+        <input type="password" id="outlook-tenant-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+        <span class="field-hint">Azure Portal → Microsoft Entra ID → Overview</span>
+      </div>
+
+      <div class="actions" id="outlook-actions-main">
+        <button class="btn-save" onclick="saveOutlook()">Save</button>
+        <button class="btn-connect" id="outlook-connect-btn" onclick="connectOutlookOAuth()">🔗 Connect with Microsoft</button>
+        <button class="btn-clear" title="Clear credentials" onclick="clearCredentials('outlook')">✕</button>
+      </div>
+      <div class="actions" id="outlook-actions-connected" style="display:none;">
+        <button class="btn-test" style="flex:1;" onclick="testConnection('outlook')">Test Connection</button>
+        <button class="btn-test" style="flex:1;" id="outlook-email-btn" onclick="sendOutlookTestEmail()">📧 Send Test Email</button>
+      </div>
+
+      <div class="result-box" id="result-outlook"></div>
+
+    </div>
+  </div>
+
+
+  <!-- ──────────── TEAMS CARD ──────────── -->
+  <div class="card" id="card-teams">
+    <div class="card-header">
+      <div class="card-icon teams">💜</div>
+      <div class="card-title">
+        <h2>Microsoft Teams</h2>
+        <span>Microsoft Graph API — OAuth 2.0</span>
+      </div>
+      <span class="status-badge unconfigured" id="badge-teams">
+        <span class="status-dot"></span> Not configured
+      </span>
+    </div>
+
+    <div class="card-body">
+
+      <div class="instructions">
+        <div class="instructions-toggle" onclick="toggleInstructions('teams')">
+          <span>📋 How to find your Teams credentials</span>
+          <span class="chevron" id="chevron-teams">▼</span>
+        </div>
+        <div class="instructions-body" id="instructions-teams">
+          <ol>
+            <li>Go to <a href="https://portal.azure.com" target="_blank">portal.azure.com</a> and sign in.</li>
+            <li>Search for <strong>Microsoft Entra ID</strong> → <strong>App registrations</strong> → <strong>New registration</strong>.</li>
+            <li>Name your app, set <strong>Redirect URI</strong> to <code>http://localhost:4000/auth/teams/callback</code> (Web platform).</li>
+            <li>After creation, copy the <strong>Application (Client) ID</strong> and <strong>Directory (Tenant) ID</strong> from the <strong>Overview</strong> page.</li>
+            <li>Go to <strong>Certificates &amp; secrets → New client secret</strong>. Copy the secret <strong>Value</strong> (not the Secret ID).</li>
+            <li>Under <strong>API permissions → Add a permission → Microsoft Graph → Delegated</strong>, add:<br>
+                <code>User.Read</code> &nbsp;<code>Calendars.Read</code> &nbsp;<code>OnlineMeetings.Read</code> &nbsp;<code>OnlineMeetingRecording.Read.All</code> &nbsp;<code>OnlineMeetingTranscript.Read.All</code> &nbsp;<code>offline_access</code></li>
+            <li>Click <strong>Grant admin consent</strong> for your organization (required for Recording/Transcript scopes).</li>
+            <li>Save your credentials below, then click <strong>Connect with Microsoft</strong> to authorize.</li>
+          </ol>
+          <div class="warn-box" style="margin-top:0.5rem;">
+            ⚠️ <strong>Recording and Transcript scopes require admin consent.</strong> If your org restricts this, ask your Microsoft 365 admin to approve the app.
+          </div>
+          <div class="warn-box" style="margin-top:0.5rem;flex-direction:column;gap:0.3rem;">
+            <div>⚠️ <strong>For transcripts to appear, transcription must be enabled before the meeting starts.</strong></div>
+            <div style="font-size:0.78rem;margin-top:0.2rem;">In Teams Admin Center → <strong>Meetings → Meeting policies</strong> → enable <strong>Transcription</strong>. Then in the meeting click <strong>More → Start transcription</strong>.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Application (Client) ID</label>
+        <input type="password" id="teams-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+        <span class="field-hint">Azure Portal → App registrations → Overview</span>
+      </div>
+
+      <div class="field">
+        <label>Client Secret Value</label>
+        <input type="password" id="teams-client-secret" placeholder="Your client secret value" autocomplete="off" />
+        <span class="field-hint">Certificates &amp; secrets → Value column (not the ID column)</span>
+      </div>
+
+      <div class="field">
+        <label>Directory (Tenant) ID</label>
+        <input type="password" id="teams-tenant-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" autocomplete="off" />
+        <span class="field-hint">Azure Portal → Microsoft Entra ID → Overview</span>
+      </div>
+
+      <div class="actions" id="teams-actions-main">
+        <button class="btn-save" onclick="saveTeams()">Save</button>
+        <button class="btn-connect" id="teams-connect-btn" onclick="connectTeamsOAuth()">🔗 Connect with Microsoft</button>
+        <button class="btn-clear" title="Clear credentials" onclick="clearCredentials('teams')">✕</button>
+      </div>
+      <div class="actions" id="teams-actions-test" style="display:none;">
+        <button class="btn-test" style="flex:1;" id="teams-test-btn" onclick="testTeams()">Test Connection</button>
+      </div>
+
+      <div class="result-box" id="result-teams"></div>
+
+    </div>
+  </div>
+
+
+  <!-- ──────────── 3CX SMS CARD ──────────── -->
+  <div class="card" id="card-3cx">
+    <div class="card-header">
+      <div class="card-icon threecx">📱</div>
+      <div class="card-title">
+        <h2>3CX SMS</h2>
+        <span>Telnyx SMS Gateway</span>
+      </div>
+      <span class="status-badge unconfigured" id="badge-3cx">
+        <span class="status-dot"></span> Not configured
+      </span>
+    </div>
+
+    <div class="card-body">
+
+      <div class="instructions">
+        <div class="instructions-toggle" onclick="toggleInstructions('3cx')">
+          <span>📋 How to find your Telnyx credentials</span>
+          <span class="chevron" id="chevron-3cx">▼</span>
+        </div>
+        <div class="instructions-body" id="instructions-3cx">
+          <ol>
+            <li>Log in to <a href="https://telnyx.com" target="_blank">telnyx.com</a> and go to <strong>API Keys</strong> in the left menu.</li>
+            <li>Click <strong>Create API Key</strong>, give it a name, and copy the key immediately (it won't be shown again).</li>
+            <li>Go to <strong>Numbers</strong> → find your SMS-enabled phone number. Copy it in E.164 format (e.g. <code>+15551234567</code>).</li>
+            <li>Paste both values below and click <strong>Save</strong>, then <strong>Test Connection</strong>.</li>
+          </ol>
+          <div class="info-box" style="margin-top:0.5rem;">
+            ℹ️ This is the same Telnyx account that 3CX uses as its SMS provider — no extra setup needed.
+          </div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Telnyx API Key</label>
+        <input type="password" id="threecx-api-key" placeholder="KEY..." autocomplete="off" />
+        <span class="field-hint">telnyx.com → API Keys</span>
+      </div>
+
+      <div class="field">
+        <label>Your Telnyx Phone Number</label>
+        <input type="text" id="threecx-phone-number" placeholder="+15551234567" autocomplete="off" />
+        <span class="field-hint">E.164 format — telnyx.com → Numbers</span>
+      </div>
+
+      <div class="actions" id="3cx-actions-main">
+        <button class="btn-save" onclick="save3cx()">Save</button>
+        <button class="btn-test" onclick="test3cx()">Test Connection</button>
+        <button class="btn-clear" title="Clear credentials" onclick="clearCredentials('3cx')">✕</button>
+      </div>
+
+      <div class="result-box" id="result-3cx"></div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- ──────────── INTEGRATION TESTS ──────────── -->
+<div style="max-width:900px;margin:1.5rem auto 0;">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-icon" style="background:rgba(99,102,241,0.15);">🧪</div>
+      <div class="card-title">
+        <h2>Integration Tests</h2>
+        <span>Verify write permissions — create real events, confirm they appear, then delete them</span>
+      </div>
+    </div>
+    <div class="card-body">
+
+      <!-- Zoom Tests -->
+      <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.75rem;">Zoom — Meeting Creation</div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+          <button class="btn-test" onclick="integTestZoomCreate()">📅 Create Test Meeting</button>
+        </div>
+        <div id="integ-zoom-result" style="display:none;margin-top:0.75rem;font-size:0.86rem;line-height:1.6;"></div>
+        <div id="integ-zoom-cleanup" style="display:none;margin-top:0.5rem;"></div>
+      </div>
+
+      <!-- Outlook Tests -->
+      <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;">
+        <div style="font-size:0.8rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:0.75rem;">Outlook — Calendar Event &amp; Invite</div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-bottom:0.5rem;">
+          <button class="btn-test" onclick="showOutlookScopes()">🔍 Show Granted Scopes</button>
+        </div>
+        <div id="integ-outlook-scopes" style="display:none;margin-bottom:0.75rem;font-size:0.83rem;line-height:1.6;"></div>
+        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+          <button class="btn-test" onclick="integTestOutlookCreate(null)">📅 Create Event (no invite)</button>
+          <span style="color:var(--text-muted);font-size:0.82rem;">or send invite to:</span>
+          <input type="email" id="integ-invite-email" placeholder="email@example.com"
+            style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;
+                   padding:0.42rem 0.75rem;color:var(--text);font-size:0.86rem;outline:none;width:220px;">
+          <button class="btn-test" onclick="integTestOutlookInvite()">✉️ Create + Send Invite</button>
+        </div>
+        <div id="integ-outlook-result" style="display:none;margin-top:0.75rem;font-size:0.86rem;line-height:1.6;"></div>
+        <div id="integ-outlook-cleanup" style="display:none;margin-top:0.5rem;"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ──────────── RECORDINGS PANEL ──────────── -->
+<div id="recordings-panel" style="display:none;max-width:900px;margin:1.5rem auto 0;">
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="card-icon zoom">🎬</div>
+        <div class="card-title"><h2>Cloud Recordings</h2><span>Transcripts from your Zoom meetings</span></div>
+      </div>
+      <button class="btn-test" id="load-recordings-btn" onclick="loadRecordings()" style="flex:none;width:auto;">Load Recordings</button>
+    </div>
+    <div id="recordings-body" style="padding:1.25rem 1.5rem;">
+      <p style="color:var(--text-muted);font-size:0.88rem;">Click <strong>Load Recordings</strong> to fetch your recent cloud recordings.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────── TEAMS MEETINGS PANEL ──────────── -->
+<div id="teams-panel" style="display:none;max-width:900px;margin:1.5rem auto 0;">
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="card-icon teams">📅</div>
+        <div class="card-title"><h2>Teams Meetings</h2><span>Transcripts from your Microsoft Teams meetings</span></div>
+      </div>
+      <button class="btn-test" id="load-teams-btn" onclick="loadTeamsMeetings()" style="flex:none;width:auto;">Load Meetings</button>
+    </div>
+    <div id="teams-body" style="padding:1.25rem 1.5rem;">
+      <p style="color:var(--text-muted);font-size:0.88rem;">Click <strong>Load Meetings</strong> to fetch your recent Teams meetings from the last 90 days.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────── OUTLOOK EVENTS PANEL ──────────── -->
+<div id="outlook-panel" style="display:none;max-width:900px;margin:1.5rem auto 0;">
+  <div class="card">
+    <div class="card-header" style="justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="card-icon outlook">📅</div>
+        <div class="card-title"><h2>Upcoming Calendar</h2><span>Your next 7 days from Outlook</span></div>
+      </div>
+      <button class="btn-test" id="load-outlook-btn" onclick="loadOutlookEvents()" style="flex:none;width:auto;">Load Events</button>
+    </div>
+    <div id="outlook-body" style="padding:1.25rem 1.5rem;">
+      <p style="color:var(--text-muted);font-size:0.88rem;">Click <strong>Load Events</strong> to fetch your upcoming calendar events.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ──────────── 3CX SMS PANEL ──────────── -->
+<div id="3cx-panel" style="display:none;max-width:900px;margin:1.5rem auto 0;">
+  <div class="card">
+    <!-- Send SMS -->
+    <div class="card-header" style="border-bottom:1px solid var(--border);">
+      <div class="card-icon threecx">📤</div>
+      <div class="card-title"><h2>Send SMS</h2><span>Send a message from your Telnyx number</span></div>
+    </div>
+    <div style="padding:1.25rem 1.5rem;">
+      <div class="field" style="margin-bottom:0.75rem;">
+        <label>To</label>
+        <input type="text" id="sms-to" placeholder="+15551234567" autocomplete="off" style="font-family:monospace;" />
+      </div>
+      <div class="field">
+        <label>Message</label>
+        <textarea id="sms-text" rows="3" placeholder="Type your message…" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:0.6rem 0.75rem;color:var(--text);font-size:0.88rem;resize:vertical;font-family:inherit;"></textarea>
+      </div>
+      <div class="actions" style="margin-top:0.75rem;">
+        <button class="btn-connect" id="sms-send-btn" onclick="sendSmsMessage()" style="flex:none;">📤 Send SMS</button>
+      </div>
+      <div class="result-box" id="result-sms-send"></div>
+    </div>
+
+    <!-- Inbound messages -->
+    <div class="card-header" style="border-top:1px solid var(--border);border-bottom:1px solid var(--border);justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:0.75rem;">
+        <div class="card-icon threecx">📥</div>
+        <div class="card-title"><h2>Recent Inbound SMS</h2><span>Messages received on your Telnyx number</span></div>
+      </div>
+      <button class="btn-test" id="load-sms-btn" onclick="loadSmsMessages()" style="flex:none;width:auto;">Load Messages</button>
+    </div>
+    <div id="sms-body" style="padding:1.25rem 1.5rem;">
+      <p style="color:var(--text-muted);font-size:0.88rem;">Click <strong>Load Messages</strong> to see recent inbound SMS.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SMS Thread Modal -->
+<div id="sms-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:600px;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-weight:600;font-size:1rem;" id="sms-modal-number">Conversation</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);">Full message history</div>
+      </div>
+      <button onclick="closeSmsModal()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;padding:0.2rem 0.4rem;">✕</button>
+    </div>
+    <div id="sms-modal-body" style="overflow-y:auto;padding:1rem 1.25rem;flex:1;font-size:0.87rem;"></div>
+  </div>
+</div>
+
+<!-- Transcript Modal -->
+<div id="transcript-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:200;align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:680px;max-height:85vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.25rem;border-bottom:1px solid var(--border);">
+      <div>
+        <div style="font-weight:600;font-size:1rem;" id="modal-title">Transcript</div>
+        <div style="font-size:0.78rem;color:var(--text-muted);" id="modal-meta"></div>
+      </div>
+      <button onclick="closeTranscript()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;padding:0.2rem 0.4rem;">✕</button>
+    </div>
+    <div id="modal-body" style="overflow-y:auto;padding:1.25rem;flex:1;font-size:0.87rem;line-height:1.7;color:var(--text-muted);white-space:pre-wrap;"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // ── Instructions content ───────────────────────────────────
+  const ZOOM_INSTRUCTIONS = {
+    general: `
+      <ol>
+        <li>Go to <a href="https://marketplace.zoom.us" target="_blank">marketplace.zoom.us</a> and sign in.</li>
+        <li>Click <strong>Develop → Build App</strong> in the top navigation.</li>
+        <li>Choose <strong>General App</strong> and create (or open) your app.</li>
+        <li>Under <strong>App Credentials</strong>, copy your <strong>Client ID</strong> and <strong>Client Secret</strong>.</li>
+        <li>Under <strong>OAuth</strong> settings, add this as an <strong>OAuth Redirect URL</strong>:<br>
+            <code>http://localhost:4000/auth/zoom/callback</code></li>
+        <li>Under <strong>Scopes</strong>, add each of these (the dashboard will request them automatically on connect):<br>
+            <code>calendar:write:event</code> &nbsp;<code>calendar:delete:event</code> &nbsp;<code>meeting:read:meeting_audio</code> &nbsp;<code>meeting:read:meeting_transcript</code> &nbsp;<code>cloud_recording:read:meeting_transcript</code> &nbsp;<code>cloud_recording:read:list_user_recordings</code> &nbsp;<code>user:read:user</code></li>
+        <li>Save your credentials below, then click <strong>Connect with Zoom</strong> to authorize.</li>
+      </ol>
+      <div class="info-box" style="margin-top:0.5rem;">
+        ℹ️ The dashboard automatically requests all required scopes when you connect — no manual scope entry during login.
+      </div>
+      <div class="warn-box" style="margin-top:0.5rem;flex-direction:column;gap:0.3rem;">
+        <div>⚠️ <strong>For transcripts to appear via API, you must use Cloud Recording — not AI Companion.</strong></div>
+        <div style="font-size:0.78rem;margin-top:0.2rem;">
+          In Zoom → <strong>Settings → Recording → Cloud recording</strong> → enable <strong>Audio transcript</strong>.<br>
+          Then in your meeting click <strong>Record → Record to Cloud</strong>. The transcript (CC/VTT file) will be generated alongside the video.<br><br>
+          The automatic "this meeting is being transcribed" AI Companion indicator is a <em>separate</em> Zoom feature — its transcripts are not accessible via the recordings API.
+        </div>
+      </div>
+      <div style="margin-top:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:0.6rem 0.75rem;">
+        <div style="font-size:0.75rem;color:var(--text-muted);font-weight:600;margin-bottom:0.4rem;text-transform:uppercase;letter-spacing:0.05em;">Scopes requested on connect</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.3rem;">
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">calendar:write:event</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">calendar:delete:event</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">meeting:read:meeting_audio</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">meeting:read:meeting_transcript</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">cloud_recording:read:meeting_transcript</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">cloud_recording:read:list_user_recordings</span>
+          <span style="background:rgba(45,140,255,0.15);color:#60a5fa;padding:0.15rem 0.5rem;border-radius:4px;font-size:0.75rem;font-family:monospace;">user:read:user</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.4rem;">
+          Covers: create/delete calendar events · meeting audio &amp; transcripts · list &amp; read cloud recordings · user profile
+        </div>
+      </div>`,
+    s2s: `
+      <ol>
+        <li>Go to <a href="https://marketplace.zoom.us" target="_blank">marketplace.zoom.us</a> and sign in.</li>
+        <li>Click <strong>Develop → Build App</strong> in the top navigation.</li>
+        <li>Choose <strong>Server-to-Server OAuth</strong> (requires a paid Zoom account).</li>
+        <li>On the <strong>App Credentials</strong> tab, copy the <strong>Account ID</strong>, <strong>Client ID</strong>, and <strong>Client Secret</strong>.</li>
+        <li>Under <strong>Scopes</strong>, add at minimum: <code>user:read:admin</code>.</li>
+        <li>Activate the app if it is not already active.</li>
+      </ol>
+      <div class="warn-box" style="margin-top:0.5rem;">
+        ⚠️ Server-to-Server OAuth requires a <strong>paid Zoom account</strong> (Pro, Business, or Enterprise) and admin access.
+        If this option is greyed out, use <strong>General App</strong> instead.
+      </div>`
+  };
+
+  let zoomType = 'general';
+
+  function setZoomType(type) {
+    zoomType = type;
+
+    // Toggle selector buttons
+    document.getElementById('zoom-type-general').classList.toggle('active', type === 'general');
+    document.getElementById('zoom-type-s2s').classList.toggle('active', type === 's2s');
+
+    // Swap subtitle
+    document.getElementById('zoom-subtitle').textContent =
+      type === 'general' ? 'General App — OAuth 2.0' : 'Server-to-Server OAuth 2.0';
+
+    // Swap fields & actions
+    document.getElementById('zoom-fields-general').style.display = type === 'general' ? '' : 'none';
+    document.getElementById('zoom-fields-s2s').style.display     = type === 's2s'     ? '' : 'none';
+    document.getElementById('zoom-actions-general').style.display = type === 'general' ? '' : 'none';
+    document.getElementById('zoom-actions-s2s').style.display     = type === 's2s'     ? '' : 'none';
+
+    // Swap instructions content
+    document.getElementById('instructions-zoom').innerHTML = ZOOM_INSTRUCTIONS[type];
+
+    clearResult('zoom');
+  }
+
+  // ── Utilities ──────────────────────────────────────────────
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(t._timer);
+    t._timer = setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  function setBadge(service, state) {
+    const badge = document.getElementById(`badge-${service}`);
+    badge.className = 'status-badge ' + state;
+    badge.innerHTML = `<span class="status-dot"></span> ${
+      state === 'connected' ? 'Connected' :
+      state === 'error'     ? 'Error' :
+                              'Not configured'
+    }`;
+  }
+
+  function setResult(service, type, message, nextStep) {
+    const box = document.getElementById(`result-${service}`);
+    box.className = 'result-box ' + type;
+    box.innerHTML = message + (nextStep ? `<div class="next-step">${nextStep}</div>` : '');
+  }
+
+  function clearResult(service) {
+    const box = document.getElementById(`result-${service}`);
+    box.className = 'result-box';
+    box.innerHTML = '';
+  }
+
+  function toggleInstructions(service) {
+    const body = document.getElementById(`instructions-${service}`);
+    const chevron = document.getElementById(`chevron-${service}`);
+    const open = body.classList.toggle('open');
+    chevron.textContent = open ? '▲' : '▼';
+  }
+
+  // ── Load existing status on page load ─────────────────────
+  async function loadStatus(service) {
+    try {
+      const res = await fetch(`/api/credentials/${service}`);
+      const data = await res.json();
+      if (data.configured) setBadge(service, 'connected');
+      if (service === 'zoom' && data.oauthConnected) {
+        setResult('zoom', 'success', '✓ Zoom account connected via OAuth.');
+        document.getElementById('zoom-actions-general-test').style.display = '';
+        showRecordingsPanel();
+      }
+      if (service === 'teams' && data.oauthConnected) {
+        setResult('teams', 'success', '✓ Microsoft Teams account connected via OAuth.');
+        document.getElementById('teams-actions-test').style.display = '';
+        showTeamsPanel();
+      }
+      if (service === 'outlook' && data.oauthConnected) {
+        setResult('outlook', 'success', '✓ Outlook account connected via OAuth.');
+        document.getElementById('outlook-actions-connected').style.display = '';
+        showOutlookEventsPanel();
+      }
+      if (service === '3cx' && data.configured) {
+        show3cxPanel();
+      }
+    } catch { /* ignore */ }
+  }
+
+  // ── Zoom: General App — save client ID/secret ─────────────
+  async function saveZoomGeneral() {
+    const clientId     = document.getElementById('zoom-client-id').value.trim();
+    const clientSecret = document.getElementById('zoom-client-secret').value.trim();
+    if (!clientId || !clientSecret) {
+      showToast('Please fill in both Client ID and Client Secret.');
+      return;
+    }
+    await _savePayload('zoom', { ZOOM_API_KEY: clientId, ZOOM_API_SECRET: clientSecret, ZOOM_OAUTH_TYPE: 'general' });
+  }
+
+  // ── Zoom: General App — start OAuth flow ──────────────────
+  async function connectZoomOAuth() {
+    clearResult('zoom');
+    const btn = document.getElementById('zoom-connect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Opening Zoom…';
+
+    try {
+      const res  = await fetch('/api/zoom/oauth/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+        setResult('zoom', 'info', 'ℹ️ A Zoom authorization window has opened. Sign in and approve access, then come back here.');
+        // Poll for token
+        pollZoomToken();
+      } else {
+        setResult('zoom', 'failure', '✗ ' + (data.message || 'Could not start OAuth flow. Save credentials first.'));
+      }
+    } catch {
+      setResult('zoom', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔗 Connect with Zoom';
+    }
+  }
+
+  // Poll every 2s for up to 2 minutes to detect successful OAuth callback
+  function pollZoomToken() {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) { clearInterval(interval); return; }
+      try {
+        const res  = await fetch('/api/credentials/zoom');
+        const data = await res.json();
+        if (data.oauthConnected) {
+          clearInterval(interval);
+          setBadge('zoom', 'connected');
+          setResult('zoom', 'success', '✓ Zoom account connected via OAuth. You can now use the Zoom MCP.');
+          document.getElementById('zoom-actions-general-test').style.display = '';
+          showRecordingsPanel();
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+  }
+
+  // ── Zoom: General App — test stored token ─────────────────
+  async function testZoomGeneral() {
+    clearResult('zoom');
+    const btn = document.getElementById('zoom-general-test-btn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch('/api/test/zoom/general', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge('zoom', 'connected');
+        setResult('zoom', 'success', '✓ ' + data.message);
+      } else {
+        setBadge('zoom', 'error');
+        setResult('zoom', 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setResult('zoom', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  // ── Zoom: S2S — save ──────────────────────────────────────
+  async function saveZoomS2S() {
+    const accountId    = document.getElementById('zoom-account-id').value.trim();
+    const clientId     = document.getElementById('zoom-s2s-client-id').value.trim();
+    const clientSecret = document.getElementById('zoom-s2s-client-secret').value.trim();
+    if (!accountId || !clientId || !clientSecret) {
+      showToast('Please fill in all three fields.');
+      return;
+    }
+    await _savePayload('zoom', { ZOOM_ACCOUNT_ID: accountId, ZOOM_API_KEY: clientId, ZOOM_API_SECRET: clientSecret, ZOOM_OAUTH_TYPE: 's2s' });
+  }
+
+  // ── Zoom: S2S — test ──────────────────────────────────────
+  async function testZoomS2S() {
+    clearResult('zoom');
+    const btn = document.querySelector('#zoom-actions-s2s .btn-test');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch('/api/test/zoom/s2s', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge('zoom', 'connected');
+        setResult('zoom', 'success', '✓ ' + data.message);
+      } else {
+        setBadge('zoom', 'error');
+        setResult('zoom', 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setBadge('zoom', 'error');
+      setResult('zoom', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  // ── Shared save helper ────────────────────────────────────
+  const SERVICE_NAMES = { zoom: 'Zoom', outlook: 'Outlook', teams: 'Teams', '3cx': '3CX SMS' };
+  async function _savePayload(service, payload) {
+    try {
+      const res  = await fetch(`/api/credentials/${service}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge(service, 'connected');
+        clearResult(service);
+        showToast(`${SERVICE_NAMES[service] || service} credentials saved.`);
+        document.querySelectorAll(`#card-${service} input`).forEach(i => { i.value = ''; });
+      } else {
+        showToast('Save failed. Try again.');
+      }
+    } catch {
+      showToast('Network error — is the server running?');
+    }
+  }
+
+  // ── Outlook: save ─────────────────────────────────────────
+  async function saveOutlook() {
+    const clientId     = document.getElementById('outlook-client-id').value.trim();
+    const clientSecret = document.getElementById('outlook-client-secret').value.trim();
+    const tenantId     = document.getElementById('outlook-tenant-id').value.trim();
+    if (!clientId || !clientSecret || !tenantId) {
+      showToast('Please fill in all three Outlook fields.');
+      return;
+    }
+    await _savePayload('outlook', { MS_CLIENT_ID: clientId, MS_CLIENT_SECRET: clientSecret, MS_TENANT_ID: tenantId });
+  }
+
+  // ── Outlook: start OAuth flow ─────────────────────────────
+  async function connectOutlookOAuth() {
+    clearResult('outlook');
+    const btn = document.getElementById('outlook-connect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Opening Microsoft…';
+
+    try {
+      const res  = await fetch('/api/outlook/oauth/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+        setResult('outlook', 'info', 'ℹ️ A Microsoft authorization window has opened. Sign in and approve access, then come back here.');
+        pollOutlookToken();
+      } else {
+        setResult('outlook', 'failure', '✗ ' + (data.message || 'Could not start OAuth flow. Save credentials first.'));
+      }
+    } catch {
+      setResult('outlook', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔗 Connect with Microsoft';
+    }
+  }
+
+  // Poll every 2s for up to 2 minutes to detect successful Outlook OAuth callback
+  function pollOutlookToken() {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) { clearInterval(interval); return; }
+      try {
+        const res  = await fetch('/api/credentials/outlook');
+        const data = await res.json();
+        if (data.oauthConnected) {
+          clearInterval(interval);
+          setBadge('outlook', 'connected');
+          setResult('outlook', 'success', '✓ Outlook account connected via OAuth. You can now test and send emails.');
+          document.getElementById('outlook-actions-connected').style.display = '';
+          showOutlookEventsPanel();
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+  }
+
+  // ── Outlook: send test email ──────────────────────────────
+  async function sendOutlookTestEmail() {
+    clearResult('outlook');
+    const btn = document.getElementById('outlook-email-btn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+      const res  = await fetch('/api/outlook/send-test-email', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setResult('outlook', 'success', '✓ ' + data.message);
+      } else {
+        setResult('outlook', 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setResult('outlook', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = '📧 Send Test Email';
+    }
+  }
+
+  // ── Outlook: show events panel ────────────────────────────
+  function showOutlookEventsPanel() {
+    document.getElementById('outlook-panel').style.display = '';
+  }
+
+  // ── Outlook: load calendar events ─────────────────────────
+  async function loadOutlookEvents() {
+    const btn  = document.getElementById('load-outlook-btn');
+    const body = document.getElementById('outlook-body');
+    btn.disabled = true; btn.textContent = 'Loading…';
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">Fetching calendar events…</p>';
+
+    try {
+      const res  = await fetch('/api/outlook/events');
+      const data = await res.json();
+
+      if (!data.ok) {
+        body.innerHTML = `<p style="color:var(--red);font-size:0.88rem;">✗ ${data.message}</p>`;
+        return;
+      }
+
+      if (!data.events || data.events.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">No upcoming events in the next 7 days.</p>';
+        return;
+      }
+
+      let html = `<p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">Showing ${data.events.length} upcoming event(s)</p>`;
+
+      html += data.events.map(ev => {
+        const start   = ev.start ? new Date(ev.start) : null;
+        const end     = ev.end   ? new Date(ev.end)   : null;
+        const dateStr = start ? start.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' }) : '';
+        const timeStr = start ? start.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+        const endStr  = end   ? end.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+        const loc     = ev.location ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.1rem;">📍 ${escHtml(ev.location)}</div>` : '';
+        const online  = ev.isOnlineMeeting ? `<span style="font-size:0.72rem;background:rgba(0,120,212,0.15);color:#60a5fa;padding:0.1rem 0.4rem;border-radius:4px;margin-left:0.4rem;">Online</span>` : '';
+        return `
+          <div style="padding:0.75rem 0;border-bottom:1px solid var(--border);">
+            <div style="font-size:0.9rem;font-weight:500;">${escHtml(ev.subject || 'No title')}${online}</div>
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;">${dateStr}${timeStr ? ' · ' + timeStr : ''}${endStr ? ' – ' + endStr : ''}</div>
+            ${loc}
+          </div>`;
+      }).join('');
+
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<p style="color:var(--red);font-size:0.88rem;">✗ Network error — is the server running?</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Refresh';
+    }
+  }
+
+  // ── Outlook: test ─────────────────────────────────────────
+  async function testConnection(service) {
+    clearResult(service);
+    const btn = document.querySelector(`#card-${service} .btn-test`);
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch(`/api/test/${service}`, { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge(service, 'connected');
+        setResult(service, 'success', '✓ ' + data.message, data.nextStep || null);
+      } else {
+        setBadge(service, 'error');
+        setResult(service, 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setBadge(service, 'error');
+      setResult(service, 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  // ── Clear credentials ──────────────────────────────────────
+  async function clearCredentials(service) {
+    if (!confirm(`Clear saved ${SERVICE_NAMES[service] || service} credentials?`)) return;
+    try {
+      await fetch(`/api/credentials/${service}`, { method: 'DELETE' });
+      setBadge(service, 'unconfigured');
+      clearResult(service);
+      if (service === 'teams') {
+        document.getElementById('teams-panel').style.display = 'none';
+        document.getElementById('teams-actions-test').style.display = 'none';
+      }
+      if (service === 'outlook') {
+        document.getElementById('outlook-panel').style.display = 'none';
+        document.getElementById('outlook-actions-connected').style.display = 'none';
+      }
+      if (service === '3cx') {
+        document.getElementById('3cx-panel').style.display = 'none';
+      }
+      showToast('Credentials cleared.');
+    } catch {
+      showToast('Network error.');
+    }
+  }
+
+  // ── Recordings panel ──────────────────────────────────────
+  function showRecordingsPanel() {
+    document.getElementById('recordings-panel').style.display = '';
+  }
+
+  async function loadRecordings() {
+    const btn  = document.getElementById('load-recordings-btn');
+    const body = document.getElementById('recordings-body');
+    btn.disabled = true; btn.textContent = 'Loading…';
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">Fetching recordings…</p>';
+
+    try {
+      const res  = await fetch('/api/zoom/recordings');
+      const data = await res.json();
+
+      if (!data.ok) {
+        body.innerHTML = data.reauth
+          ? `<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+               <p style="color:var(--yellow);font-size:0.88rem;flex:1;">⚠️ ${data.message}</p>
+               <button class="btn-connect" style="flex:none;font-size:0.82rem;padding:0.4rem 0.85rem;" onclick="connectZoomOAuth()">🔗 Connect with Zoom</button>
+             </div>`
+          : `<p style="color:var(--red);font-size:0.88rem;">✗ ${data.message}</p>`;
+        return;
+      }
+
+      if (!data.meetings || data.meetings.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">No cloud recordings found in the last 12 months. Make sure cloud recording is enabled in your Zoom settings.</p>';
+        return;
+      }
+
+      const withTranscript = data.meetings.filter(m => m.hasTranscript).length;
+      let html = `<p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">Found ${data.total || data.meetings.length} recording(s) — ${withTranscript} with transcript</p>`;
+
+      // Store for safe indexed access — avoids JSON quoting issues in onclick
+      window._zoomMeetings = data.meetings;
+
+      html += data.meetings.map((m, i) => {
+        const date  = new Date(m.start_time).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+        const time  = new Date(m.start_time).toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+        const dur   = m.duration ? `${m.duration} min` : '';
+        const idFmt = String(m.id).replace(/(\d{3})(\d{4})(\d+)/, '$1 $2 $3');
+        return `
+          <div style="padding:0.75rem 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.9rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(m.topic || 'Untitled Meeting')}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.15rem;">
+                  ${date} &nbsp;·&nbsp; ${time}${dur ? ' &nbsp;·&nbsp; ' + dur : ''}
+                  &nbsp;·&nbsp; <span style="font-family:monospace;">ID: ${idFmt}</span>
+                </div>
+              </div>
+              <div style="flex-shrink:0;">
+                <button class="btn-test" style="font-size:0.78rem;padding:0.35rem 0.7rem;" onclick="openTranscriptByIndex(${i})">
+                  View Transcript
+                </button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<p style="color:var(--red);font-size:0.88rem;">✗ Network error — is the server running?</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Refresh';
+    }
+  }
+
+  function openTranscriptByIndex(i) {
+    const m    = window._zoomMeetings[i];
+    const date = new Date(m.start_time).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' });
+    const time = new Date(m.start_time).toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+    // Use lookupId (UUID preferred) — unique per recording instance, avoids returning wrong entry
+    openTranscript(m.transcriptUrl, m.lookupId || m.uuid || String(m.id), m.topic || 'Untitled Meeting', date + ' · ' + time);
+  }
+
+  async function openTranscript(downloadUrl, meetingId, topic, meta) {
+    const modal = document.getElementById('transcript-modal');
+    document.getElementById('modal-title').textContent = topic || 'Transcript';
+    document.getElementById('modal-meta').textContent  = meta || '';
+    document.getElementById('modal-body').textContent  = 'Loading transcript…';
+    modal.style.display = 'flex';
+
+    try {
+      const params = new URLSearchParams();
+      if (downloadUrl) params.set('url', downloadUrl);
+      if (meetingId)   params.set('meetingId', meetingId);
+      const res  = await fetch('/api/zoom/transcript?' + params.toString());
+      const data = await res.json();
+      if (data.ok && data.lines.length) {
+        document.getElementById('modal-body').style.color = '';
+        document.getElementById('modal-body').textContent = data.lines.join('\n');
+      } else {
+        document.getElementById('modal-body').innerText = data.message || 'Could not load transcript.';
+        document.getElementById('modal-body').style.color = 'var(--red)';
+      }
+    } catch {
+      document.getElementById('modal-body').innerHTML =
+        '<span style="color:var(--red);">Network error loading transcript.</span>';
+    }
+  }
+
+  function closeTranscript() {
+    document.getElementById('transcript-modal').style.display = 'none';
+  }
+
+  // Close modal on backdrop click
+  document.getElementById('transcript-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeTranscript();
+  });
+
+  function escHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Teams: save credentials ───────────────────────────────
+  async function saveTeams() {
+    const clientId     = document.getElementById('teams-client-id').value.trim();
+    const clientSecret = document.getElementById('teams-client-secret').value.trim();
+    const tenantId     = document.getElementById('teams-tenant-id').value.trim();
+    if (!clientId || !clientSecret || !tenantId) {
+      showToast('Please fill in all three Teams fields.');
+      return;
+    }
+    await _savePayload('teams', { TEAMS_CLIENT_ID: clientId, TEAMS_CLIENT_SECRET: clientSecret, TEAMS_TENANT_ID: tenantId });
+  }
+
+  // ── Teams: start OAuth flow ───────────────────────────────
+  async function connectTeamsOAuth() {
+    clearResult('teams');
+    const btn = document.getElementById('teams-connect-btn');
+    btn.disabled = true;
+    btn.textContent = 'Opening Microsoft…';
+
+    try {
+      const res  = await fetch('/api/teams/oauth/start', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok && data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+        setResult('teams', 'info', 'ℹ️ A Microsoft authorization window has opened. Sign in and approve access, then come back here.');
+        pollTeamsToken();
+      } else {
+        setResult('teams', 'failure', '✗ ' + (data.message || 'Could not start OAuth flow. Save credentials first.'));
+      }
+    } catch {
+      setResult('teams', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔗 Connect with Microsoft';
+    }
+  }
+
+  // Poll every 2s for up to 2 minutes to detect successful Teams OAuth callback
+  function pollTeamsToken() {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) { clearInterval(interval); return; }
+      try {
+        const res  = await fetch('/api/credentials/teams');
+        const data = await res.json();
+        if (data.oauthConnected) {
+          clearInterval(interval);
+          setBadge('teams', 'connected');
+          setResult('teams', 'success', '✓ Microsoft Teams account connected via OAuth. You can now load your meetings.');
+          document.getElementById('teams-actions-test').style.display = '';
+          showTeamsPanel();
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+  }
+
+  // ── Teams: test stored token ──────────────────────────────
+  async function testTeams() {
+    clearResult('teams');
+    const btn = document.getElementById('teams-test-btn');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch('/api/test/teams', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge('teams', 'connected');
+        setResult('teams', 'success', '✓ ' + data.message);
+      } else {
+        setBadge('teams', 'error');
+        setResult('teams', 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setResult('teams', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  // ── Teams: show meetings panel ────────────────────────────
+  function showTeamsPanel() {
+    document.getElementById('teams-panel').style.display = '';
+  }
+
+  // ── Teams: load meetings ──────────────────────────────────
+  async function loadTeamsMeetings() {
+    const btn  = document.getElementById('load-teams-btn');
+    const body = document.getElementById('teams-body');
+    btn.disabled = true; btn.textContent = 'Loading…';
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">Fetching meetings… (this may take a moment while looking up meeting IDs)</p>';
+
+    try {
+      const res  = await fetch('/api/teams/meetings');
+      const data = await res.json();
+
+      if (!data.ok) {
+        body.innerHTML = `<p style="color:var(--red);font-size:0.88rem;">✗ ${data.message}</p>`;
+        return;
+      }
+
+      if (!data.meetings || data.meetings.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">No meetings found in the last 90 days where you were the organiser and a transcript was saved.</p>';
+        return;
+      }
+
+      let html = `<p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">Found ${data.total} meeting(s) you organised with transcripts</p>`;
+
+      window._teamsMeetings = data.meetings;
+
+      html += data.meetings.map((m, i) => {
+        const dateStr = m.start_time ? new Date(m.start_time).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '';
+        const timeStr = m.start_time ? new Date(m.start_time).toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+        const txLabel = m.transcriptCount > 1 ? `${m.transcriptCount} transcripts` : '1 transcript';
+        return `
+          <div style="padding:0.75rem 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.9rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(m.topic || 'Untitled Meeting')}</div>
+                <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.15rem;">
+                  ${dateStr}${timeStr ? ' &nbsp;·&nbsp; ' + timeStr : ''} &nbsp;·&nbsp; ${txLabel}
+                </div>
+              </div>
+              <div style="flex-shrink:0;">
+                <button class="btn-test" style="font-size:0.78rem;padding:0.35rem 0.7rem;" onclick="openTeamsTranscriptByIndex(${i})">
+                  View Transcript
+                </button>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<p style="color:var(--red);font-size:0.88rem;">✗ Network error — is the server running?</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Refresh';
+    }
+  }
+
+  // ── Teams: open transcript for a meeting ──────────────────
+  async function openTeamsTranscriptByIndex(i) {
+    const m      = window._teamsMeetings[i];
+    const dateStr = m.start_time ? new Date(m.start_time).toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : '';
+    const timeStr = m.start_time ? new Date(m.start_time).toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+
+    const modal = document.getElementById('transcript-modal');
+    document.getElementById('modal-title').textContent = m.topic || 'Transcript';
+    document.getElementById('modal-meta').textContent  = [dateStr, timeStr].filter(Boolean).join(' · ');
+    document.getElementById('modal-body').textContent  = 'Loading transcript…';
+    document.getElementById('modal-body').style.color  = '';
+    modal.style.display = 'flex';
+
+    try {
+      const res  = await fetch(`/api/teams/transcript?meetingId=${encodeURIComponent(m.meetingId)}`);
+      const data = await res.json();
+      if (data.ok && data.lines && data.lines.length) {
+        document.getElementById('modal-body').textContent = data.lines.join('\n');
+      } else {
+        document.getElementById('modal-body').textContent = data.message || 'Could not load transcript.';
+        document.getElementById('modal-body').style.color = 'var(--red)';
+      }
+    } catch {
+      document.getElementById('modal-body').innerHTML =
+        '<span style="color:var(--red);">Network error loading transcript.</span>';
+    }
+  }
+
+  // ── 3CX / Telnyx SMS ─────────────────────────────────────
+
+  async function save3cx() {
+    const apiKey  = document.getElementById('threecx-api-key').value.trim();
+    const fromNum = document.getElementById('threecx-phone-number').value.trim();
+    if (!apiKey || !fromNum) {
+      showToast('Please fill in both the API key and phone number.');
+      return;
+    }
+    await _savePayload('3cx', { TELNYX_API_KEY: apiKey, TELNYX_FROM_NUMBER: fromNum });
+  }
+
+  async function test3cx() {
+    clearResult('3cx');
+    const btn = document.querySelector('#card-3cx .btn-test');
+    btn.disabled = true; btn.textContent = 'Testing…';
+    try {
+      const res  = await fetch('/api/test/3cx', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setBadge('3cx', 'connected');
+        setResult('3cx', 'success', '✓ ' + data.message);
+        show3cxPanel();
+      } else {
+        setBadge('3cx', 'error');
+        setResult('3cx', 'failure', '✗ ' + data.message);
+      }
+    } catch {
+      setBadge('3cx', 'error');
+      setResult('3cx', 'failure', '✗ Network error — is the server running?');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Test Connection';
+    }
+  }
+
+  function show3cxPanel() {
+    document.getElementById('3cx-panel').style.display = '';
+  }
+
+  async function sendSmsMessage() {
+    const to   = document.getElementById('sms-to').value.trim();
+    const text = document.getElementById('sms-text').value.trim();
+    if (!to || !text) { showToast('Enter a recipient number and message.'); return; }
+
+    const sendBox = document.getElementById('result-sms-send');
+    const btn = document.getElementById('sms-send-btn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    sendBox.className = 'result-box'; sendBox.innerHTML = '';
+
+    try {
+      const res  = await fetch('/api/3cx/send', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, text }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        sendBox.className = 'result-box success';
+        sendBox.textContent = '✓ ' + data.message;
+        document.getElementById('sms-text').value = '';
+      } else {
+        sendBox.className = 'result-box failure';
+        sendBox.textContent = '✗ ' + data.message;
+      }
+    } catch {
+      sendBox.className = 'result-box failure';
+      sendBox.textContent = '✗ Network error — is the server running?';
+    } finally {
+      btn.disabled = false; btn.textContent = '📤 Send SMS';
+    }
+  }
+
+  async function loadSmsMessages() {
+    const btn  = document.getElementById('load-sms-btn');
+    const body = document.getElementById('sms-body');
+    btn.disabled = true; btn.textContent = 'Loading…';
+    body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">Fetching messages…</p>';
+
+    try {
+      const res  = await fetch('/api/3cx/messages');
+      const data = await res.json();
+
+      if (!data.ok) {
+        body.innerHTML = `<p style="color:var(--red);font-size:0.88rem;">✗ ${data.message}</p>`;
+        return;
+      }
+
+      if (!data.messages || data.messages.length === 0) {
+        body.innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">No inbound messages found.</p>';
+        return;
+      }
+
+      window._smsMessages = data.messages;
+
+      let html = `<p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:0.75rem;">${data.total} recent inbound message(s)</p>`;
+      html += data.messages.map((m, i) => {
+        const dt   = m.created_at ? new Date(m.created_at) : null;
+        const date = dt ? dt.toLocaleDateString(undefined, { month:'short', day:'numeric' }) : '';
+        const time = dt ? dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+        return `
+          <div style="padding:0.75rem 0;border-bottom:1px solid var(--border);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:0.88rem;font-weight:500;font-family:monospace;">${escHtml(m.from)}</div>
+                <div style="font-size:0.82rem;color:var(--text-muted);margin-top:0.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(m.text)}</div>
+                <div style="font-size:0.75rem;color:var(--gray);margin-top:0.1rem;">${date}${time ? ' · ' + time : ''}</div>
+              </div>
+              <button class="btn-test" style="font-size:0.78rem;padding:0.35rem 0.7rem;flex-shrink:0;" onclick="openSmsThread(${JSON.stringify(escHtml(m.from))})">
+                View Thread
+              </button>
+            </div>
+          </div>`;
+      }).join('');
+      body.innerHTML = html;
+    } catch {
+      body.innerHTML = '<p style="color:var(--red);font-size:0.88rem;">✗ Network error — is the server running?</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Refresh';
+    }
+  }
+
+  async function openSmsThread(number) {
+    document.getElementById('sms-modal-number').textContent = number;
+    document.getElementById('sms-modal-body').innerHTML = '<p style="color:var(--text-muted);font-size:0.88rem;">Loading conversation…</p>';
+    document.getElementById('sms-modal').style.display = 'flex';
+
+    try {
+      const res  = await fetch(`/api/3cx/thread?number=${encodeURIComponent(number)}`);
+      const data = await res.json();
+
+      if (!data.ok || !data.messages || data.messages.length === 0) {
+        document.getElementById('sms-modal-body').innerHTML =
+          `<p style="color:var(--text-muted);font-size:0.88rem;">${data.message || 'No messages found.'}</p>`;
+        return;
+      }
+
+      const html = data.messages.map(m => {
+        const isOut = m.direction === 'outbound';
+        const dt    = m.created_at ? new Date(m.created_at) : null;
+        const time  = dt ? dt.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' }) : '';
+        const date  = dt ? dt.toLocaleDateString(undefined, { month:'short', day:'numeric' }) : '';
+        const align = isOut ? 'right' : 'left';
+        const bg    = isOut ? 'rgba(45,140,255,0.15)' : 'var(--surface2)';
+        const label = isOut ? '→ You' : `← ${escHtml(m.from)}`;
+        return `
+          <div style="margin-bottom:0.85rem;text-align:${align};">
+            <div style="display:inline-block;max-width:80%;background:${bg};border:1px solid var(--border);border-radius:10px;padding:0.5rem 0.75rem;text-align:left;">
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.2rem;">${label} · ${date} ${time}</div>
+              <div style="font-size:0.87rem;">${escHtml(m.text)}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+      const body = document.getElementById('sms-modal-body');
+      body.innerHTML = html;
+      body.scrollTop = body.scrollHeight; // scroll to latest
+    } catch {
+      document.getElementById('sms-modal-body').innerHTML =
+        '<p style="color:var(--red);font-size:0.88rem;">✗ Network error loading thread.</p>';
+    }
+  }
+
+  function closeSmsModal() {
+    document.getElementById('sms-modal').style.display = 'none';
+  }
+
+  document.getElementById('sms-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeSmsModal();
+  });
+
+  // ── Init ───────────────────────────────────────────────────
+  setZoomType('general'); // default to General App
+  loadStatus('zoom');
+  loadStatus('outlook');
+  loadStatus('teams');
+  loadStatus('3cx');
+
+  // ── Integration test helpers ───────────────────────────────
+
+  async function integTestZoomCreate() {
+    const resultEl  = document.getElementById('integ-zoom-result');
+    const cleanupEl = document.getElementById('integ-zoom-cleanup');
+    resultEl.style.display = 'block';
+    cleanupEl.style.display = 'none';
+    resultEl.innerHTML = '<span style="color:var(--text-muted)">Creating test Zoom meeting 5 min from now…</span>';
+    try {
+      const res  = await fetch('/api/test/zoom/create-meeting', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic: 'MCP Connector Test Meeting' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        resultEl.innerHTML =
+          `<span style="color:var(--green)">✓ ${data.message}</span><br>` +
+          `Meeting ID: <code>${data.meetingId}</code><br>` +
+          `Join URL: <a href="${data.joinUrl}" target="_blank" style="color:#4f6ef7;">${data.joinUrl}</a><br>` +
+          `<span style="color:var(--text-muted)">Check your Zoom dashboard — you should see this meeting. Then clean up below.</span>`;
+        cleanupEl.style.display = 'block';
+        cleanupEl.innerHTML =
+          `<button class="btn-clear" style="font-size:0.82rem;padding:0.4rem 0.8rem;"
+             onclick="integDeleteZoom(this,'${data.meetingId}')">🗑 Delete meeting ${data.meetingId}</button>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--red)">✗ ${data.message}</span>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<span style="color:var(--red)">✗ Network error: ${err.message}</span>`;
+    }
+  }
+
+  async function integDeleteZoom(btn, meetingId) {
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const res  = await fetch(`/api/zoom/meetings/${meetingId}`, { method: 'DELETE' });
+    const data = await res.json();
+    btn.parentElement.innerHTML = data.ok
+      ? `<span style="color:var(--green);font-size:0.82rem;">✓ ${data.message}</span>`
+      : `<span style="color:var(--red);font-size:0.82rem;">✗ ${data.message}</span>`;
+  }
+
+  async function integTestOutlookCreate(attendeeEmail) {
+    const resultEl  = document.getElementById('integ-outlook-result');
+    const cleanupEl = document.getElementById('integ-outlook-cleanup');
+    resultEl.style.display = 'block';
+    cleanupEl.style.display = 'none';
+    resultEl.innerHTML = '<span style="color:var(--text-muted)">Creating test Outlook event…</span>';
+    const body = { subject: 'MCP Connector Test Event' };
+    if (attendeeEmail) body.attendeeEmail = attendeeEmail;
+    try {
+      const res  = await fetch('/api/test/outlook/create-event', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        resultEl.innerHTML =
+          `<span style="color:var(--green)">✓ ${data.message}</span><br>` +
+          (data.webLink ? `<a href="${data.webLink}" target="_blank" style="color:#4f6ef7;">Open in Outlook</a><br>` : '') +
+          (attendeeEmail ? `<span style="color:var(--text-muted)">Check ${attendeeEmail} inbox — invite should arrive within a minute.</span>` : '');
+        cleanupEl.style.display = 'block';
+        cleanupEl.innerHTML =
+          `<button class="btn-clear" style="font-size:0.82rem;padding:0.4rem 0.8rem;"
+             data-id="${encodeURIComponent(data.eventId)}"
+             onclick="integDeleteOutlook(this)">🗑 Delete test event</button>`;
+      } else {
+        resultEl.innerHTML = `<span style="color:var(--red)">✗ ${data.message}</span>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<span style="color:var(--red)">✗ Network error: ${err.message}</span>`;
+    }
+  }
+
+  async function showOutlookScopes() {
+    const el = document.getElementById('integ-outlook-scopes');
+    el.style.display = 'block';
+    el.innerHTML = '<span style="color:var(--text-muted)">Decoding token…</span>';
+    try {
+      const data = await fetch('/api/outlook/token-scopes').then(r => r.json());
+      if (!data.ok) {
+        el.innerHTML = `<span style="color:var(--red)">✗ ${data.message}</span>`;
+        return;
+      }
+      const hasRW = data.scopes.some(s => s === 'Calendars.ReadWrite');
+      const hasRO = data.scopes.some(s => s === 'Calendars.Read');
+      const calColor = hasRW ? 'var(--green)' : 'var(--red)';
+      const calMsg = hasRW
+        ? '✓ Calendars.ReadWrite IS in this token'
+        : hasRO
+          ? '✗ Only Calendars.Read (read-only) — Calendars.ReadWrite missing. Grant admin consent in Azure Portal.'
+          : '✗ No calendar scopes at all — grant Calendars.ReadWrite admin consent in Azure Portal.';
+      const scopeList = data.scopes.map(s => {
+        const isKey = ['Calendars.ReadWrite','Calendars.Read','Mail.Send','User.Read'].includes(s);
+        return `<span style="color:${isKey ? 'var(--text)' : 'var(--text-muted)'}">${s}</span>`;
+      }).join(' &nbsp;·&nbsp; ');
+      el.innerHTML = `
+        <div style="margin-bottom:0.35rem;color:${calColor};font-weight:600;">${calMsg}</div>
+        <div style="color:var(--text-muted);font-size:0.79rem;">Expires: ${data.expiry}</div>
+        <div style="margin-top:0.4rem;word-break:break-word;">${scopeList}</div>`;
+    } catch (err) {
+      el.innerHTML = `<span style="color:var(--red)">✗ Network error: ${err.message}</span>`;
+    }
+  }
+
+  function integTestOutlookInvite() {
+    const email = document.getElementById('integ-invite-email').value.trim();
+    if (!email) { alert('Enter an email address first.'); return; }
+    integTestOutlookCreate(email);
+  }
+
+  async function integDeleteOutlook(btn) {
+    const eventId = decodeURIComponent(btn.dataset.id);
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    const res  = await fetch('/api/test/outlook/delete-event', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId }),
+    });
+    const data = await res.json();
+    btn.parentElement.innerHTML = data.ok
+      ? `<span style="color:var(--green);font-size:0.82rem;">✓ ${data.message}</span>`
+      : `<span style="color:var(--red);font-size:0.82rem;">✗ ${data.message}</span>`;
+  }
+</script>
+</body>
+</html>
