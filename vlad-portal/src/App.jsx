@@ -9,6 +9,7 @@ import Dashboard from "./pages/Dashboard";
 import ApprovalQueue from "./pages/ApprovalQueue";
 import CalendarPage from "./pages/Calendar";
 import ActiveTasks from "./pages/ActiveTasks";
+import ScheduledTasks from "./pages/ScheduledTasks";
 import WeeklySummary from "./pages/WeeklySummary";
 import SettingsPage from "./pages/Settings";
 import ClientList from "./pages/ClientList";
@@ -40,6 +41,7 @@ function AppShell() {
             <Route path="/approvals" element={<ApprovalQueue />} />
             <Route path="/calendar" element={<CalendarPage />} />
             <Route path="/tasks" element={<ActiveTasks />} />
+            <Route path="/scheduled" element={<ScheduledTasks />} />
             <Route path="/summary" element={<WeeklySummary />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/db-explorer" element={<AdminRoute><DatabaseExplorerPage /></AdminRoute>} />

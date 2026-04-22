@@ -181,35 +181,37 @@ class ChatMessagesView(APIView):
         # ── Approval queue context (injected into every AI response) ─
         approval_context = self._get_approval_context(content)
 
-        # ── AI intent classification ───────────────────────────────
-        schedule_queued = False
-        approval_id     = None
-        intent = self._classify_intent(content, session_id) if client_id else "general"
-        print(f"[Chat] Detected intent: {intent}")
+        # ── AI intent classification (multi-intent) ───────────────────
+        intents = self._classify_intents(content, session_id) if client_id else ["general"]
+        print(f"[Chat] Detected intents: {intents}")
 
-        if intent in ("date_reply", "schedule"):
+        schedule_queued   = False
+        approval_id       = None
+        email_queued      = False
+        email_approval_id = None
+        transcript_queued = False
+        meeting_id        = None
+        ask_replies       = []   # questions to ask user for missing info per intent
+
+        if "date_reply" in intents or "schedule" in intents:
             result = self._handle_schedule_intent(content, client_id, request.user)
             print(f"[Chat] _handle_schedule_intent result: {result}")
             if result and result.get("schedule_queued"):
                 schedule_queued = True
                 approval_id = result["approval_id"]
             elif result and result.get("ask"):
-                reply = result["reply"]
-                assistant_msg = ChatMessage.objects.create(
-                    session_id=session_id, client_id=client_id,
-                    role="assistant", content=reply,
-                )
-                return Response({
-                    "user": ChatMessageSerializer(user_msg).data,
-                    "assistant": ChatMessageSerializer(assistant_msg).data,
-                    "schedule_ask": True,
-                }, status=status.HTTP_201_CREATED)
+                ask_replies.append(result["reply"])
 
-        # ── Transcript handling ────────────────────────────────────
-        transcript_queued = False
-        meeting_id        = None
+        if "email" in intents and client_id:
+            result = self._handle_email_intent(content, client_id, request.user)
+            print(f"[Chat] _handle_email_intent result: {result}")
+            if result and result.get("email_queued"):
+                email_queued = True
+                email_approval_id = result["approval_id"]
+            elif result and result.get("ask"):
+                ask_replies.append(result["reply"])
 
-        if not schedule_queued and intent == "transcript" and client_id:
+        if "transcript" in intents and client_id:
             meeting = self._handle_transcript(content, client_id, request.user)
             if meeting:
                 transcript_queued = True
@@ -218,32 +220,45 @@ class ChatMessagesView(APIView):
         # ── Build prompt ───────────────────────────────────────────
         base_system = get_prompt("chat_system_base")
 
+        queued_items = []
         if schedule_queued:
-            system_prompt = (
-                "You are the Solera AI assistant. The advisor has just requested to schedule a "
-                "meeting with a client. Confirm that you've added a calendar event proposal to "
-                "the Approval Queue with the requested details. Tell them to review it there "
-                "before the invite is sent. Be brief (1-2 sentences)."
-            )
-            if client_context:
-                system_prompt += f"\n\n{client_context}"
-            if approval_context:
-                system_prompt += f"\n\n{approval_context}"
-            user_prompt = content
+            queued_items.append("a calendar event proposal")
+        if email_queued:
+            queued_items.append("a draft email")
+        if transcript_queued:
+            queued_items.append("the meeting transcript for Scribe processing")
 
-        elif transcript_queued:
+        if ask_replies and not queued_items:
+            # Nothing was queued — only missing info; skip AI call, return directly
+            combined_ask = " Also, ".join(ask_replies)
+            assistant_msg = ChatMessage.objects.create(
+                session_id=session_id, client_id=client_id,
+                role="assistant", content=combined_ask,
+            )
+            return Response({
+                "user": ChatMessageSerializer(user_msg).data,
+                "assistant": ChatMessageSerializer(assistant_msg).data,
+                "schedule_ask": True,
+            }, status=status.HTTP_201_CREATED)
+
+        elif queued_items:
+            queued_str = " and ".join(queued_items)
+            ask_str = (" Also: " + " ".join(ask_replies)) if ask_replies else ""
             system_prompt = (
-                "You are the Solera AI assistant. The advisor has just submitted a meeting "
-                "transcript for processing. Confirm that you received it and that the Scribe "
-                "agent is now generating structured notes, draft emails, action items, and a "
-                "calendar event proposal. Tell them to check the Approval Queue when ready. "
+                f"You are the Solera AI assistant. The advisor's request has been processed: "
+                f"you've added {queued_str} to the Approval Queue for review.{ask_str} "
+                "Confirm what was queued and remind them to check the Approval Queue. "
                 "Be brief (2-3 sentences)."
             )
             if client_context:
                 system_prompt += f"\n\n{client_context}"
             if approval_context:
                 system_prompt += f"\n\n{approval_context}"
-            user_prompt = "I've just submitted a meeting transcript for processing."
+            user_prompt = (
+                "I've just submitted meeting content for processing."
+                if transcript_queued
+                else content
+            )
 
         else:
             # Regular conversation — include client context + history
@@ -294,6 +309,9 @@ class ChatMessagesView(APIView):
         if schedule_queued:
             response_data["schedule_queued"] = True
             response_data["approval_id"] = approval_id
+        if email_queued:
+            response_data["email_queued"] = True
+            response_data["email_approval_id"] = email_approval_id
 
         return Response(response_data, status=status.HTTP_201_CREATED)
 
@@ -444,6 +462,72 @@ class ChatMessagesView(APIView):
             print(traceback.format_exc())
             return None
 
+    def _handle_email_intent(self, content: str, client_id: str, user):
+        """Draft a follow-up email via AI and queue it for advisor approval.
+        Returns {"email_queued": True, "approval_id": str} or {"ask": True, "reply": str}
+        """
+        try:
+            import json as _json
+            from apps.clients.models import Client
+            from apps.approvals.models import ApprovalItem
+            from apps.agents.provider import AIProvider
+
+            client = Client.objects.get(pk=client_id, is_active=True)
+
+            if not client.email:
+                return {
+                    "ask": True,
+                    "reply": (
+                        f"I don't have an email address on file for {client.name}. "
+                        "Please add it to their profile first."
+                    ),
+                }
+
+            draft_prompt = (
+                f'Draft a professional email to {client.name} based on this advisor request:\n'
+                f'"{content}"\n\n'
+                'The email is from a Solera Financial advisor. Keep it concise and professional.\n'
+                'Return JSON only (no markdown):\n'
+                '{"subject": "<clear subject line>", "body": "<full email body>"}'
+            )
+            ai_result = AIProvider().complete(
+                system_prompt=(
+                    "You are a financial advisor email drafter. "
+                    "Return only valid JSON with no markdown or extra text."
+                ),
+                user_prompt=draft_prompt,
+            )
+            raw = ai_result["text"].strip()
+            print(f"[Chat] Email draft raw AI response: {raw!r}")
+            if raw.startswith("```"):
+                parts = raw.split("```")
+                raw = parts[1] if len(parts) >= 2 else raw
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            extracted = _json.loads(raw.strip())
+
+            draft = {
+                "to": client.email,
+                "subject": extracted.get("subject", f"Follow-up — {client.name}"),
+                "body": extracted.get("body", ""),
+            }
+            approval = ApprovalItem.objects.create(
+                client_id=client_id,
+                client_name=client.name,
+                item_type="email_followup",
+                agent="Chat",
+                urgency="normal",
+                draft_content=draft,
+            )
+            print(f"[Chat] Created email_followup approval id={approval.id} for client={client.name}")
+            return {"email_queued": True, "approval_id": str(approval.id)}
+
+        except Exception as e:
+            import traceback
+            print(f"[Chat] _handle_email_intent ERROR: {e}")
+            print(traceback.format_exc())
+            return None
+
     # ── Transcript helpers ─────────────────────────────────────────
 
     def _detect_transcript(self, content: str) -> bool:
@@ -531,41 +615,48 @@ class ChatMessagesView(APIView):
         except Exception:
             return ""
 
-    def _classify_intent(self, content: str, session_id: str) -> str:
-        """Classify advisor message intent via AI.
-        Returns: 'schedule' | 'transcript' | 'check_approvals' | 'date_reply' | 'general'
+    def _classify_intents(self, content: str, session_id: str) -> list:
+        """Classify advisor message intent via AI. Supports multi-intent messages.
+        Returns list of applicable intents, e.g. ['schedule', 'email'].
+        Valid labels: schedule | email | transcript | check_approvals | general
         """
         from apps.agents.provider import AIProvider
 
-        # Fast path: pending schedule reply needs no AI call
+        # Fast path: pending schedule reply — no AI call needed
         if self._detect_pending_schedule(session_id, content):
-            return "date_reply"
+            return ["date_reply"]
 
         prompt = (
-            "Classify this advisor message into exactly one intent. "
-            "Respond with only the label word, nothing else.\n\n"
+            "Classify this advisor message. It may contain MULTIPLE requests.\n"
+            "List ALL applicable intents, comma-separated. If nothing matches, return 'general'.\n\n"
             "Intents:\n"
-            "- schedule: advisor wants to schedule or book a meeting with a client\n"
-            "- transcript: advisor is submitting meeting notes or a transcript to be processed\n"
-            "- check_approvals: advisor is asking what items are pending or in the approval queue\n"
-            "- general: anything else — questions, analysis, regular conversation\n\n"
-            f"Message: {content[:500]}"
+            "- schedule: schedule or book a meeting with a client\n"
+            "- email: draft or send an email or follow-up message to a client\n"
+            "- transcript: submit meeting notes or a transcript for AI processing\n"
+            "- check_approvals: ask what items are pending in the approval queue\n"
+            "- general: anything else\n\n"
+            f"Message: {content[:600]}\n\n"
+            "Examples:\n"
+            '  "email John about the form and schedule a meeting Friday" → schedule,email\n'
+            '  "process this transcript" → transcript\n'
+            '  "what is pending?" → check_approvals\n'
+            '  "how is the client doing?" → general'
         )
         try:
             result = AIProvider().complete(
                 system_prompt=(
                     "You are an intent classifier for a financial advisor AI system. "
-                    "Respond with exactly one word from: schedule, transcript, check_approvals, general"
+                    "Respond with ONLY comma-separated labels from: schedule, email, transcript, check_approvals, general"
                 ),
                 user_prompt=prompt,
             )
-            label = result["text"].strip().lower().split()[0]
-            if label not in ("schedule", "transcript", "check_approvals", "general"):
-                return "general"
-            return label
+            valid = {"schedule", "email", "transcript", "check_approvals", "general"}
+            labels = [l.strip().lower() for l in result["text"].split(",")]
+            filtered = [l for l in labels if l in valid]
+            return filtered if filtered else ["general"]
         except Exception as e:
-            print(f"[Chat] _classify_intent error: {e}")
-            return "general"
+            print(f"[Chat] _classify_intents error: {e}")
+            return ["general"]
 
     def _get_doc_context(self, client_id, question):
         """Load document trees for client and return summary as context hint."""

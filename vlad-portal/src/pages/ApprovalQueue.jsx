@@ -21,7 +21,6 @@ const STATUS_COLORS = {
   pending:  "#f59e0b",
   approved: "#10b981",
   rejected: "#ef4444",
-  edited:   "#6366f1",
 };
 
 // ── Preview Components ─────────────────────────────────────────
@@ -295,6 +294,89 @@ function CalendarEventPreview({ content, onUpdate, readOnly }) {
   );
 }
 
+// ── Structured editors ─────────────────────────────────────────
+
+function MeetingNotesEditor({ value, onChange }) {
+  const notes = value || {};
+  const update = (key, val) => onChange({ ...notes, [key]: val });
+
+  return (
+    <div className="notes-editor">
+      <label className="edit-field-label">Summary</label>
+      <textarea rows={4} value={notes.summary || ""} onChange={e => update("summary", e.target.value)} />
+
+      <label className="edit-field-label" style={{ marginTop: 8 }}>Key Points (one per line)</label>
+      <textarea rows={4}
+        value={(notes.key_points || []).join("\n")}
+        onChange={e => update("key_points", e.target.value.split("\n").filter(Boolean))}
+      />
+
+      <label className="edit-field-label" style={{ marginTop: 8 }}>Decisions (one per line)</label>
+      <textarea rows={3}
+        value={(notes.decisions || []).join("\n")}
+        onChange={e => update("decisions", e.target.value.split("\n").filter(Boolean))}
+      />
+
+      <label className="edit-field-label" style={{ marginTop: 8 }}>Action Items</label>
+      {(notes.action_items || []).map((ai, i) => (
+        <div key={i} className="action-item-row">
+          <input placeholder="Owner" value={ai.owner || ""} onChange={e => {
+            const items = [...(notes.action_items || [])];
+            items[i] = { ...items[i], owner: e.target.value };
+            update("action_items", items);
+          }} />
+          <input placeholder="Task" value={ai.task || ""} onChange={e => {
+            const items = [...(notes.action_items || [])];
+            items[i] = { ...items[i], task: e.target.value };
+            update("action_items", items);
+          }} />
+          <input placeholder="Due" value={ai.due || ""} onChange={e => {
+            const items = [...(notes.action_items || [])];
+            items[i] = { ...items[i], due: e.target.value };
+            update("action_items", items);
+          }} />
+          <button className="btn btn-ghost btn-sm" onClick={() => {
+            const items = (notes.action_items || []).filter((_, j) => j !== i);
+            update("action_items", items);
+          }}>✕</button>
+        </div>
+      ))}
+      <button className="btn btn-ghost btn-sm" style={{ marginTop: 4 }} onClick={() =>
+        update("action_items", [...(notes.action_items || []), { owner: "", task: "", due: "" }])
+      }>+ Add Action Item</button>
+    </div>
+  );
+}
+
+function ActionItemsEditor({ value, onChange }) {
+  const data = value || {};
+  const tasks = data.tasks || [];
+  const updateTasks = (updated) => onChange({ ...data, tasks: updated });
+
+  return (
+    <div className="notes-editor">
+      <label className="edit-field-label">Tasks</label>
+      {tasks.map((t, i) => (
+        <div key={i} className="action-item-row">
+          <input placeholder="Owner" value={t.owner || ""} onChange={e => {
+            const updated = [...tasks]; updated[i] = { ...updated[i], owner: e.target.value }; updateTasks(updated);
+          }} />
+          <input placeholder="Task" value={t.task || ""} onChange={e => {
+            const updated = [...tasks]; updated[i] = { ...updated[i], task: e.target.value }; updateTasks(updated);
+          }} />
+          <input placeholder="Due" value={t.due || ""} onChange={e => {
+            const updated = [...tasks]; updated[i] = { ...updated[i], due: e.target.value }; updateTasks(updated);
+          }} />
+          <button className="btn btn-ghost btn-sm" onClick={() => updateTasks(tasks.filter((_, j) => j !== i))}>✕</button>
+        </div>
+      ))}
+      <button className="btn btn-ghost btn-sm" style={{ marginTop: 4 }} onClick={() =>
+        updateTasks([...tasks, { owner: "", task: "", due: "" }])
+      }>+ Add Task</button>
+    </div>
+  );
+}
+
 // ── ApprovalCard ───────────────────────────────────────────────
 
 export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit }) {
@@ -306,6 +388,8 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
       ? item.draft_content
       : item.draft_content?.body || JSON.stringify(item.draft_content, null, 2)
   );
+  const [editNotes, setEditNotes] = useState(item.draft_content || {});
+  const [editTasks, setEditTasks] = useState(item.draft_content || {});
   const [actionLoading, setActionLoading] = useState(false);
   // Local content for calendar_event fields (date, platform, duration)
   const [calContent, setCalContent] = useState(item.draft_content);
@@ -324,7 +408,7 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
   const [aiPrompt, setAiPrompt]         = useState("");
   const [approveResult, setApproveResult] = useState(null);
 
-  const isDone      = item.status !== "pending";
+  const isDone      = item.status === "approved" || item.status === "rejected";
   const isCalendar  = item.item_type === "calendar_event";
   const canApprove  = !isCalendar || !calContent.needs_date || !!calContent.proposed_date;
 
@@ -393,10 +477,14 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
     }
   }
 
-  async function handleSaveEdit() {
+  async function handleSaveAndApprove() {
     let updated;
     if (isEmail) {
       updated = { ...item.draft_content, ...emailDraft };
+    } else if (item.item_type === "meeting_notes") {
+      updated = editNotes;
+    } else if (item.item_type === "action_items") {
+      updated = editTasks;
     } else if (item.draft_content?.body !== undefined) {
       updated = { ...item.draft_content, body: editText };
     } else {
@@ -404,16 +492,22 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
     }
     setActionLoading(true);
     try {
+      // Step 1: save the edited content
       const patched = await apiFetch(`/approvals/${item.id}/`, {
         method: "PATCH",
         body: JSON.stringify({ draft_content: updated }),
       });
       setItem(patched);
-      if (isEmail) setEmailDraft({ to: patched.draft_content?.to || "", subject: patched.draft_content?.subject || "", body: patched.draft_content?.body || "" });
-      onEdit?.(patched);
+      // Step 2: immediately approve (triggers email send / MCP)
+      const approved = await apiFetch(`/approvals/${item.id}/approve/`, { method: "POST" });
+      setItem(approved);
+      if (approved.calendar_sent !== undefined) {
+        setApproveResult({ sent: approved.calendar_sent, error: approved.calendar_error || "" });
+      }
+      onApprove?.(approved);
       setEditing(false);
     } catch (e) {
-      alert(`Save failed: ${e.message}`);
+      alert(`Save & Approve failed: ${e.message}`);
     } finally {
       setActionLoading(false);
     }
@@ -506,6 +600,10 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
                     rows={12}
                   />
                 </>
+              ) : item.item_type === "meeting_notes" ? (
+                <MeetingNotesEditor value={editNotes} onChange={setEditNotes} />
+              ) : item.item_type === "action_items" ? (
+                <ActionItemsEditor value={editTasks} onChange={setEditTasks} />
               ) : (
                 <textarea
                   value={editText}
@@ -515,13 +613,13 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
               )}
               <div className="edit-actions">
                 <button
-                  className="btn btn-primary"
-                  onClick={handleSaveEdit}
+                  className="btn btn-approve"
+                  onClick={handleSaveAndApprove}
                   disabled={actionLoading}
                 >
-                  Save &amp; Mark Edited
+                  <Check size={14} /> {actionLoading ? "…" : "Save & Approve"}
                 </button>
-                <button className="btn btn-ghost" onClick={() => setEditing(false)}>
+                <button className="btn btn-ghost" onClick={() => setEditing(false)} disabled={actionLoading}>
                   Cancel
                 </button>
               </div>
@@ -611,7 +709,6 @@ export function ApprovalCard({ item: initialItem, onApprove, onReject, onEdit })
             <div className="done-banner">
               {item.status === "approved" && "✓ Approved"}
               {item.status === "rejected" && "✗ Rejected"}
-              {item.status === "edited"   && "✎ Edited — ready to approve"}
             </div>
           )}
           {item.item_type === "calendar_event" && approveResult && (
@@ -638,20 +735,23 @@ export default function ApprovalQueue() {
   const [error, setError]   = useState(null);
   const [filter, setFilter] = useState("pending");
 
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchItems = useCallback(async (silent = false) => {
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const data = await apiFetch("/approvals/");
       setItems(Array.isArray(data) ? data : (data.results || []));
     } catch (e) {
-      setError(e.message);
+      if (!silent) setError(e.message);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchItems(); }, [fetchItems]);
+  useEffect(() => {
+    fetchItems();
+    const interval = setInterval(() => fetchItems(true), 8000);
+    return () => clearInterval(interval);
+  }, [fetchItems]);
 
   function syncItem(updated) {
     setItems(prev => prev.map(i => i.id === updated.id ? updated : i));
@@ -662,7 +762,6 @@ export default function ApprovalQueue() {
   const counts = {
     pending:  items.filter(i => i.status === "pending").length,
     approved: items.filter(i => i.status === "approved").length,
-    edited:   items.filter(i => i.status === "edited").length,
     rejected: items.filter(i => i.status === "rejected").length,
     all:      items.length,
   };
@@ -682,7 +781,7 @@ export default function ApprovalQueue() {
       </div>
 
       <div className="filter-tabs">
-        {["pending", "approved", "edited", "rejected", "all"].map(f => (
+        {["pending", "approved", "rejected", "all"].map(f => (
           <button
             key={f}
             className={`filter-tab ${filter === f ? "active" : ""}`}

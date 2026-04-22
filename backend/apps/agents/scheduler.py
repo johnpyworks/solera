@@ -18,31 +18,41 @@ def check_and_queue_reminders():
         return {"skipped": "48hr reminders disabled"}
 
     now = timezone.now()
-    window_start = now + timedelta(hours=47)
-    window_end = now + timedelta(hours=49)
 
+    # Catch any meeting within the next 48 hours that hasn't been reminded yet.
+    # The old 47-49hr narrow window missed meetings booked less than 49hrs in advance.
     upcoming = Meeting.objects.filter(
-        scheduled_at__gte=window_start,
-        scheduled_at__lte=window_end,
+        scheduled_at__gte=now,
+        scheduled_at__lte=now + timedelta(hours=48),
         is_past=False,
+    ).exclude(
+        reminders__reminder_type="48hr_email"
     ).select_related("client", "owner")
 
     created = []
     for meeting in upcoming:
-        # Skip if reminder already queued for this meeting
-        if Reminder.objects.filter(meeting=meeting, reminder_type="48hr_email").exists():
-            continue
 
         client = meeting.client
         advisor_name = meeting.owner.display_name if meeting.owner else "Vlad Donets"
-        meeting_dt = meeting.scheduled_at.strftime("%A, %B %d at %-I:%M %p")
+        # Convert UTC → configured local timezone (America/Los_Angeles) before formatting
+        local_dt = timezone.localtime(meeting.scheduled_at)
+        # %-I is Linux-only; build cross-platform 12-hour time without leading zero
+        _h = local_dt.hour % 12 or 12
+        _m = local_dt.strftime("%M")
+        _ap = local_dt.strftime("%p")
+        meeting_dt = local_dt.strftime(f"%A, %B %d at {_h}:{_m} {_ap}")
         language_tag = client.language_tag or ""
+
+        join_url = meeting.zoom_join_url or ""
+        # If we have a Zoom URL, pass it. If not, just say Zoom — never promise "link to be provided"
+        # to avoid the AI generating a false commitment to send a link later.
+        location_str = join_url or meeting.location or "Zoom"
 
         prompt = get_prompt("scheduler_reminder_48hr").format(
             client_name=client.name,
             meeting_type=meeting.meeting_type,
             meeting_datetime=meeting_dt,
-            location=meeting.location or "Zoom",
+            location=location_str,
             advisor_name=advisor_name,
             language_tag=language_tag,
         )
@@ -50,7 +60,8 @@ def check_and_queue_reminders():
         is_russian = "ru" in language_tag.lower()
 
         try:
-            body = AIProvider().complete(system_prompt=get_prompt("scheduler_system"), user_prompt=prompt)
+            result = AIProvider().complete(system_prompt=get_prompt("scheduler_system"), user_prompt=prompt)
+            body = result["text"]
         except Exception as e:
             body = f"[Draft unavailable: {e}]"
 

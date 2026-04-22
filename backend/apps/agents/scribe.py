@@ -56,6 +56,7 @@ def run(meeting_id: str) -> dict:
 
     is_russian = client.language_tag and "ru" in client.language_tag.lower()
     advisor_name = meeting.owner.display_name if meeting.owner else "Vlad Donets"
+    advisor_email = (meeting.owner.email or "") if meeting.owner else ""
     meeting_date = meeting.scheduled_at.strftime("%B %d, %Y") if meeting.scheduled_at else str(date.today())
     today_str = date.today().isoformat()
 
@@ -113,6 +114,7 @@ def run(meeting_id: str) -> dict:
             client_name=client.name,
             agent="Scribe",
             draft_content={
+                "to": advisor_email,   # internal summary goes to advisor, not client
                 "subject": f"[Internal] {meeting.meeting_type} Notes — {client.name} — {meeting_date}",
                 "body": body,
             },
@@ -167,7 +169,6 @@ def run(meeting_id: str) -> dict:
         created.append(str(item.id))
 
     # ── Next meeting / calendar event ─────────────────────────────────────────
-    advisor_email = meeting.owner.email or "" if meeting.owner else ""
     client_email = client.email or ""
     calendar_result = ai.complete(
         get_prompt("next_meeting_system"),

@@ -1,4 +1,5 @@
 """Orchestrator — routes intents to the appropriate agent."""
+import traceback
 from apps.agents.models import AgentLog
 
 
@@ -7,7 +8,7 @@ def route(intent: str, **kwargs) -> dict:
     intent: 'process_meeting' | 'queue_reminder' | 'generate_weekly_summary'
     kwargs: meeting_id, reminder_type, etc.
     """
-    AgentLog.objects.create(
+    log = AgentLog.objects.create(
         agent_name="Orchestrator",
         action=f"Routing intent: {intent} {kwargs}",
         client_id=kwargs.get("client_id"),
@@ -18,27 +19,35 @@ def route(intent: str, **kwargs) -> dict:
 
     result = {}
 
-    if intent == "process_meeting":
-        meeting_id = kwargs["meeting_id"]
-        from apps.agents import scribe, service_agent
-        scribe_result = scribe.run(meeting_id)
-        sa_result = service_agent.run(meeting_id)
-        result = {"scribe": scribe_result, "service_agent": sa_result}
+    try:
+        if intent == "process_meeting":
+            meeting_id = kwargs["meeting_id"]
+            from apps.agents import scribe, service_agent
+            scribe_result = scribe.run(meeting_id)
+            sa_result = service_agent.run(meeting_id)
+            result = {"scribe": scribe_result, "service_agent": sa_result}
 
-    elif intent == "queue_reminder":
-        from apps.agents import scheduler
-        result = scheduler.check_and_queue_reminders()
+        elif intent == "queue_reminder":
+            from apps.agents import scheduler
+            result = scheduler.check_and_queue_reminders()
 
-    elif intent == "generate_weekly_summary":
-        result = {"detail": "Weekly summary generation queued."}
+        elif intent == "generate_weekly_summary":
+            result = {"detail": "Weekly summary generation queued."}
 
-    else:
-        result = {"error": f"Unknown intent: {intent}"}
+        else:
+            result = {"error": f"Unknown intent: {intent}"}
 
-    AgentLog.objects.filter(
-        agent_name="Orchestrator",
-        action__startswith=f"Routing intent: {intent}",
-        status="running",
-    ).update(status="complete", output_data=result)
+        log.status = "complete"
+        log.output_data = result
+        log.save()
+
+    except Exception as e:
+        tb = traceback.format_exc()
+        print(f"[Orchestrator] ERROR for intent={intent} kwargs={kwargs}: {e}\n{tb}")
+        log.status = "failed"
+        log.error_msg = str(e)
+        log.output_data = {"error": str(e), "traceback": tb[-1000:]}
+        log.save()
+        result = {"error": str(e)}
 
     return result

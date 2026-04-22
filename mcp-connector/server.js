@@ -1003,11 +1003,11 @@ async function sendOutlookEmail(req, res) {
       subject,
       body: { contentType: 'HTML', content: (emailBody || '').replace(/\n/g, '<br>') },
       toRecipients: to.split(',').map(addr => ({ emailAddress: { address: addr.trim() } })),
-      saveToSentItems: true,
     };
     if (replyTo) message.replyTo = [{ emailAddress: { address: replyTo } }];
 
-    const result = await graphPost('/v1.0/me/sendMail', token, { message });
+    // saveToSentItems must be top-level in the sendMail body, not inside message
+    const result = await graphPost('/v1.0/me/sendMail', token, { message, saveToSentItems: true });
     if (result.status === 202) {
       console.log(`[Outlook] Email sent to ${to} — subject: ${subject}`);
       return json(res, 200, { ok: true, messageId: '' });

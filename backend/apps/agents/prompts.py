@@ -63,17 +63,24 @@ Output JSON array only."""
 
 SCHEDULER_SYSTEM = """You are the Scheduler agent for Solera Financial Advisory.
 Draft appointment reminder emails that are warm, professional, and concise.
-Include: meeting date/time, location/Zoom link if known, brief what-to-expect, advisor contact info.
-Keep under 150 words."""
+Rules:
+- Write ONLY the email body — no To/From/Subject headers, no "---" dividers.
+- End with a single sign-off: "Warm regards,\\n{advisor_name} | Solera Financial Advisory"
+- Do NOT add any text after the sign-off.
+- Keep under 120 words."""
 
-SCHEDULER_REMINDER_48HR = """Draft a 48-hour reminder email for this upcoming meeting:
+SCHEDULER_REMINDER_48HR = """Draft a reminder email body for this upcoming meeting:
 Client: {client_name}
 Meeting type: {meeting_type}
 Date/time: {meeting_datetime}
-Location: {location}
+Location/Link: {location}
 Advisor: {advisor_name}
 
-If the client is Russian-speaking (language_tag: {language_tag}), write the email in Russian and note "RUSSIAN-SPEAKING CLIENT — Review before sending."
+Start with "Hi {client_name}," and remind them of the meeting date, time, and location.
+If Location/Link is a URL, include it as a clickable line. If it is just "Zoom" with no URL, say the meeting is via Zoom — do NOT say "the link will be sent" or promise anything.
+End with a single sign-off — do not repeat the advisor name or add extra closing lines.
+
+If the client is Russian-speaking (language_tag: {language_tag}), write in Russian and prepend "RUSSIAN-SPEAKING CLIENT — Review before sending."
 Otherwise write in English."""
 
 CHAT_SYSTEM = """You are an AI advisor assistant for Solera Financial Advisory, supporting {advisor_name}.

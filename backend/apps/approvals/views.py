@@ -38,11 +38,17 @@ class ApprovalDetailView(generics.RetrieveUpdateAPIView):
         return get_approval_queryset(self.request.user)
 
     def perform_update(self, serializer):
-        # Mark as edited if draft_content changes
+        # Mark as edited if draft_content changes; append snapshot to edit_history
         instance = self.get_object()
         new_content = self.request.data.get("draft_content")
         if new_content and new_content != instance.draft_content:
-            serializer.save(status="edited")
+            history = list(instance.edit_history or [])
+            history.append({
+                "edited_at": timezone.now().isoformat(),
+                "edited_by": self.request.user.username,
+                "previous_content": instance.draft_content,
+            })
+            serializer.save(status="edited", edit_history=history)
         else:
             serializer.save()
 
@@ -172,9 +178,16 @@ class ApprovalApproveView(APIView):
                         print(f"[Approval] calendar_event MCP result: {result}")
                         if result.get("ok"):
                             meeting.zoom_meeting_id = result.get("zoomMeetingId", "") or ""
+                            meeting.zoom_join_url = result.get("joinUrl", "") or ""
                             meeting.outlook_event_id = result.get("eventId", "") or ""
                             meeting.save()
                             calendar_sent = True
+                            # Immediately check if this meeting falls in 48hr reminder window
+                            try:
+                                from apps.agents.scheduler import check_and_queue_reminders
+                                check_and_queue_reminders()
+                            except Exception as rem_e:
+                                print(f"[Approval] immediate reminder check failed: {rem_e}")
                             # Report partial success: Zoom created but Outlook calendar event failed
                             if not result.get("outlookCreated") and result.get("outlookError"):
                                 emails_sent = result.get("emailsSent", 0)
