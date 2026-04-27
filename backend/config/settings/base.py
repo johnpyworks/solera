@@ -38,6 +38,7 @@ LOCAL_APPS = [
     "apps.chat",
     "apps.settings_app",
     "apps.mcp_bridge",
+    "apps.db_explorer",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -73,7 +74,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 # Database
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:password@localhost:5432/solera_dev")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:password@localhost:5433/solera_dev")
 import dj_database_url  # noqa: will add to requirements
 DATABASES = {
     "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600)

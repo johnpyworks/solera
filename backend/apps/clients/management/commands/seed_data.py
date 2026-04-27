@@ -5,10 +5,9 @@ Run: python manage.py seed_data
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import datetime, date
-import pytz
 
 from apps.users.models import AdvisorUser
-from apps.clients.models import Client, Household, HouseholdMember, Note
+from apps.clients.models import Client, ClientAddress, ClientKeyDate, Household, HouseholdMember, Note
 from apps.meetings.models import Meeting
 from apps.approvals.models import ApprovalItem
 from apps.agents.models import AgentLog
@@ -50,38 +49,62 @@ class Command(BaseCommand):
         CLIENTS = [
             dict(
                 id="00000000-0000-0000-0001-000000000001",
-                name="Sarah Chen", email="sarah.chen@email.com", phone="(415) 555-0192",
-                meeting_stage="LEAP Process", wealthbox_id="WB-10041", assigned_advisor="vlad",
-                anniversary_date=parse_date("2025-03-15"), last_contact_date=parse_date("2026-03-23"),
+                first_name="Sarah", last_name="Chen",
+                email="sarah.chen@email.com", phone="(415) 555-0192",
+                meeting_stage="LEAP Process", wealthbox_id="WB-10041",
                 household=None, is_primary=True,
+                _address=dict(address_line1="742 Evergreen Terrace", city="San Francisco", state="CA", zip_code="94105"),
+                _key_dates=[
+                    dict(date_type="anniversary", date=parse_date("2025-03-15")),
+                    dict(date_type="last_contact", date=parse_date("2026-03-23")),
+                ],
             ),
             dict(
                 id="00000000-0000-0000-0001-000000000002",
-                name="Dmitri Volkov", email="d.volkov@email.com", phone="(503) 555-0234",
+                first_name="Dmitri", last_name="Volkov",
+                email="d.volkov@email.com", phone="(503) 555-0234",
                 language_tag="ru", meeting_stage="Implementation", wealthbox_id="WB-10055",
-                assigned_advisor="vlad", anniversary_date=parse_date("2023-11-01"),
-                last_contact_date=parse_date("2026-04-06"), household=None, is_primary=True,
+                household=None, is_primary=True,
+                _address=dict(address_line1="1400 NW Irving St", city="Portland", state="OR", zip_code="97209"),
+                _key_dates=[
+                    dict(date_type="anniversary", date=parse_date("2023-11-01")),
+                    dict(date_type="last_contact", date=parse_date("2026-04-06")),
+                ],
             ),
             dict(
                 id="00000000-0000-0000-0001-000000000003",
-                name="Marcus Webb", email="marcus.webb@email.com", phone="(206) 555-0122",
-                meeting_stage="Solera Heartbeat", wealthbox_id="WB-10032", assigned_advisor="vlad",
-                anniversary_date=parse_date("2021-06-10"), last_contact_date=parse_date("2026-04-02"),
+                first_name="Marcus", last_name="Webb",
+                email="marcus.webb@email.com", phone="(206) 555-0122",
+                meeting_stage="Solera Heartbeat", wealthbox_id="WB-10032",
                 household=h1, is_primary=True,
+                _address=dict(address_line1="820 Pike St", city="Seattle", state="WA", zip_code="98101"),
+                _key_dates=[
+                    dict(date_type="anniversary", date=parse_date("2021-06-10")),
+                    dict(date_type="last_contact", date=parse_date("2026-04-02")),
+                ],
             ),
             dict(
                 id="00000000-0000-0000-0001-000000000004",
-                name="Priya Nair", email="priya.nair@email.com", phone="(408) 555-0387",
-                meeting_stage="Discovery", wealthbox_id="WB-10067", assigned_advisor="vlad",
-                anniversary_date=None, last_contact_date=parse_date("2026-03-28"),
+                first_name="Priya", last_name="Nair",
+                email="priya.nair@email.com", phone="(408) 555-0387",
+                meeting_stage="Discovery", wealthbox_id="WB-10067",
                 household=None, is_primary=True,
+                _address=dict(address_line1="350 W Santa Clara St", city="San Jose", state="CA", zip_code="95113"),
+                _key_dates=[
+                    dict(date_type="last_contact", date=parse_date("2026-03-28")),
+                ],
             ),
             dict(
                 id="00000000-0000-0000-0001-000000000005",
-                name="James Thornton", email="j.thornton@email.com", phone="(425) 555-0211",
-                meeting_stage="Implementation", wealthbox_id="WB-10048", assigned_advisor="slava",
-                anniversary_date=parse_date("2022-09-20"), last_contact_date=parse_date("2026-03-15"),
+                first_name="James", last_name="Thornton",
+                email="j.thornton@email.com", phone="(425) 555-0211",
+                meeting_stage="Implementation", wealthbox_id="WB-10048",
                 household=h2, is_primary=True,
+                _address=dict(address_line1="15015 Main St", city="Bellevue", state="WA", zip_code="98007"),
+                _key_dates=[
+                    dict(date_type="anniversary", date=parse_date("2022-09-20")),
+                    dict(date_type="last_contact", date=parse_date("2026-03-15")),
+                ],
             ),
         ]
 
@@ -89,10 +112,17 @@ class Command(BaseCommand):
         short_ids = ["c1", "c2", "c3", "c4", "c5"]
 
         for i, data in enumerate(CLIENTS):
+            address_data = data.pop("_address", None)
+            key_dates_data = data.pop("_key_dates", [])
             obj, created = Client.objects.get_or_create(
                 id=data["id"],
                 defaults={**data, "owner": vlad},
             )
+            if created:
+                if address_data:
+                    ClientAddress.objects.create(client=obj, **address_data)
+                for kd in key_dates_data:
+                    ClientKeyDate.objects.create(client=obj, **kd)
             client_map[short_ids[i]] = obj
 
         # Fix Thornton owner to slava

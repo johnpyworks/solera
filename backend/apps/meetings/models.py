@@ -29,8 +29,9 @@ class Meeting(models.Model):
     transcript_text = models.TextField(blank=True)
     leap_notes_text = models.TextField(blank=True)
     processed = models.BooleanField(default=False)
-    # External IDs for MCP sync
+    # External IDs and links for MCP sync
     zoom_meeting_id = models.CharField(max_length=100, blank=True)
+    zoom_join_url = models.URLField(max_length=500, blank=True)
     teams_meeting_id = models.CharField(max_length=100, blank=True)
     outlook_event_id = models.CharField(max_length=200, blank=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)

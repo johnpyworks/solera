@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path("", views.MeetingListView.as_view(), name="meeting-list"),
+    path("upcoming/", views.UpcomingMeetingsView.as_view(), name="meetings-upcoming"),
     path("calendar-sync/", views.CalendarSyncView.as_view(), name="calendar-sync"),
     path("week-stats/", views.WeekStatsView.as_view(), name="week-stats"),
     path("<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting-detail"),

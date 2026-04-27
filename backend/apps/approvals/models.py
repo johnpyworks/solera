@@ -9,7 +9,9 @@ class ApprovalItem(models.Model):
         ("email_summary", "Post-Meeting Summary"),
         ("reminder_48hr", "48hr Reminder"),
         ("reminder_24hr", "24hr Reminder"),
-        ("wealthbox_task", "Wealthbox Tasks"),
+        ("action_items", "Action Items"),
+        ("meeting_notes", "Meeting Notes"),
+        ("calendar_event", "Calendar Event"),
         ("questionnaire_link", "Questionnaire Link"),
         ("form", "Form Draft"),
     ]
@@ -44,6 +46,8 @@ class ApprovalItem(models.Model):
     rejected_at = models.DateTimeField(null=True, blank=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     outlook_message_id = models.CharField(max_length=200, blank=True)
+    edit_history = models.JSONField(default=list, blank=True)
+    # Stores: [{"edited_at": "ISO8601", "edited_by": "username", "previous_content": {...}}]
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

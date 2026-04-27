@@ -195,27 +195,7 @@ export function AppProvider({ children }) {
       .map((t) => ({ ...submissions[t.token], token: t.token, client_email: t.client_email, submitted_at: submissions[t.token]?._submittedAt }));
   }
 
-  // New client (Phase 1: in-memory only)
-  const [extraClients, setExtraClients] = useState([]);
-
-  function addClient(clientData) {
-    const newClient = {
-      id: `c_${Date.now()}`,
-      ...clientData,
-      wealthbox_id: null,
-      anniversary_date: null,
-      last_contact_date: null,
-      household_id: null,
-      is_primary: true,
-      notes: [],
-      files: [],
-    };
-    setExtraClients((prev) => [...prev, newClient]);
-    setClientNotes((prev) => ({ ...prev, [newClient.id]: [] }));
-    return newClient;
-  }
-
-  const allClients = [...clients, ...extraClients];
+  const allClients = clients;
 
   const pendingCount = approvals.filter((a) => a.status === "pending").length;
 
@@ -237,7 +217,6 @@ export function AppProvider({ children }) {
         addClientChatMessage,
         addClientNote,
         allClients,
-        addClient,
         members,
         getMembersForHousehold,
         addHouseholdMember,

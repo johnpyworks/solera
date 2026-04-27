@@ -1,15 +1,27 @@
-"""Scribe Agent — transcript/notes → email drafts in ApprovalItem queue."""
+"""Scribe Agent — transcript/notes → 2 approval items: client email + calendar event."""
 import json
 from datetime import date
 
 from apps.agents.models import AgentLog
 from apps.agents.provider import AIProvider
-from apps.agents.prompts import (
-    SCRIBE_SYSTEM, SCRIBE_FOLLOWUP, SCRIBE_SUMMARY, SCRIBE_RUSSIAN,
+from apps.agents.prompt_store import (
+    get_prompt,
+    next_meeting_user_prompt,
+    memory_extraction_user_prompt,
 )
 from apps.approvals.models import ApprovalItem
+from apps.clients.models import ClientMemory
 from apps.meetings.models import Meeting
 from apps.settings_app.models import AdvisorSettings
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove markdown ```json ... ``` fences if present."""
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    return text
 
 
 def run(meeting_id: str) -> dict:
@@ -28,35 +40,46 @@ def run(meeting_id: str) -> dict:
     if not notes:
         return {"error": "No transcript or notes to process"}
 
+    # Load existing client memories for context
+    existing_memories = {m.key: m.value for m in ClientMemory.objects.filter(client=client)}
+    memory_context = ""
+    if existing_memories:
+        memory_context = "\n\nKnown client context:\n" + "\n".join(
+            f"- {k}: {v}" for k, v in existing_memories.items()
+        )
+
     # Build client context (last 3 notes)
     recent_notes = client.notes.order_by("-created_at")[:3]
     client_context = "\n".join(f"- {n.text}" for n in recent_notes) or "No prior notes."
 
     is_russian = client.language_tag and "ru" in client.language_tag.lower()
     advisor_name = meeting.owner.display_name if meeting.owner else "Vlad Donets"
+    advisor_email = (meeting.owner.email or "") if meeting.owner else ""
     meeting_date = meeting.scheduled_at.strftime("%B %d, %Y") if meeting.scheduled_at else str(date.today())
+    today_str = date.today().isoformat()
 
     created = []
 
-    # ── Follow-up email ───────────────────────────────────────────────────────
+    # ── Client follow-up email (summary + both to-do lists) ──────────────────
     if settings.toggle_email_followup:
-        system = SCRIBE_SYSTEM
+        system = get_prompt("scribe_system") + memory_context
         if is_russian:
-            system += f"\n\n{SCRIBE_RUSSIAN.format(client_name=client.name)}"
+            system += f"\n\n{get_prompt('scribe_russian').format(client_name=client.name)}"
 
-        followup_prompt = SCRIBE_FOLLOWUP.format(
+        followup_prompt = get_prompt("scribe_followup").format(
             client_name=client.name,
             meeting_type=meeting.meeting_type,
             meeting_date=meeting_date,
+            advisor_name=advisor_name,
             notes=notes[:3000],
             client_context=client_context,
         )
 
-        body = ai.complete(system_prompt=system, user_prompt=followup_prompt)
+        body = ai.complete(system_prompt=system, user_prompt=followup_prompt)["text"]
 
         draft = {
             "to": client.email,
-            "subject": f"Following Up on Our {meeting.meeting_type} Meeting",
+            "subject": f"Following Up on Our {meeting.meeting_type} — {meeting_date}",
             "body": body,
         }
         if is_russian:
@@ -72,29 +95,58 @@ def run(meeting_id: str) -> dict:
         )
         created.append(str(item.id))
 
-    # ── Internal summary ──────────────────────────────────────────────────────
-    if settings.toggle_email_summary:
-        summary_prompt = SCRIBE_SUMMARY.format(
-            client_name=client.name,
-            meeting_type=meeting.meeting_type,
-            meeting_date=meeting_date,
-            notes=notes[:3000],
-        )
+    # ── Next meeting / calendar event ─────────────────────────────────────────
+    client_email = client.email or ""
+    calendar_result = ai.complete(
+        get_prompt("next_meeting_system"),
+        next_meeting_user_prompt(
+            notes, client.name, client_email,
+            advisor_name, advisor_email, today_str,
+        ),
+    )
+    cal_text = _strip_code_fence(calendar_result["text"].strip())
+    try:
+        cal_data = json.loads(cal_text)
+    except (json.JSONDecodeError, ValueError):
+        cal_data = {"needs_date": True, "meeting_agreed": False}
 
-        body = ai.complete(system_prompt=SCRIBE_SYSTEM, user_prompt=summary_prompt)
-
+    if cal_data.get("meeting_agreed", False) or cal_data.get("needs_date", False):
+        if "platform" not in cal_data:
+            cal_data["platform"] = "zoom"
         item = ApprovalItem.objects.create(
             owner=meeting.owner,
-            item_type="email_summary",
+            item_type="calendar_event",
             client=client,
             client_name=client.name,
             agent="Scribe",
-            draft_content={
-                "subject": f"[Internal] {meeting.meeting_type} Notes — {client.name} — {meeting_date}",
-                "body": body,
-            },
+            urgency="normal",
+            status="pending",
+            draft_content=cal_data,
         )
         created.append(str(item.id))
+
+    # ── Memory extraction ─────────────────────────────────────────────────────
+    memory_result = ai.complete(
+        get_prompt("memory_extraction_system"),
+        memory_extraction_user_prompt(notes, client.name, existing_memories),
+    )
+    mem_text = _strip_code_fence(memory_result["text"].strip())
+    try:
+        memory_data = json.loads(mem_text)
+        if isinstance(memory_data, dict):
+            for key, value in memory_data.items():
+                if key and value:
+                    ClientMemory.objects.update_or_create(
+                        client=client,
+                        key=str(key)[:100],
+                        defaults={
+                            "value": str(value),
+                            "source": "scribe",
+                            "source_id": str(meeting.id),
+                        },
+                    )
+    except (json.JSONDecodeError, ValueError):
+        pass  # Memory extraction is best-effort
 
     # Mark meeting as processed
     meeting.processed = True
@@ -102,7 +154,7 @@ def run(meeting_id: str) -> dict:
 
     AgentLog.objects.create(
         agent_name="Scribe",
-        action=f"Generated {len(created)} email draft(s) from {meeting.meeting_type} meeting notes",
+        action=f"Generated {len(created)} item(s) from {meeting.meeting_type} meeting notes",
         client=client,
         client_name=client.name,
         status="complete",

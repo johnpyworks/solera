@@ -1,11 +1,19 @@
-from rest_framework import generics, permissions, status
+from rest_framework import generics, permissions, status, filters as drf_filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.pagination import PageNumberPagination
 
-from .models import Client, Household, HouseholdMember, Note
+
+class ClientPagePagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 100
+
+from .models import Client, Household, HouseholdMember, Note, ClientTask, ClientMemory
 from .serializers import (
     ClientListSerializer, ClientDetailSerializer,
     HouseholdSerializer, HouseholdMemberSerializer, NoteSerializer,
+    ClientTaskSerializer, ClientMemorySerializer,
 )
 from apps.meetings.models import Meeting
 from apps.meetings.serializers import MeetingSerializer
@@ -29,12 +37,21 @@ class ClientListView(generics.ListCreateAPIView):
     """GET /api/v1/clients/ — list clients scoped by role.
        POST /api/v1/clients/ — create (advisor/admin only)."""
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = ClientPagePagination
+    filter_backends = [drf_filters.SearchFilter, drf_filters.OrderingFilter]
+    search_fields = ["first_name", "last_name", "email"]
+    ordering_fields = ["last_name", "first_name", "meeting_stage", "created_at"]
+    ordering = ["last_name", "first_name"]
 
     def get_serializer_class(self):
         return ClientDetailSerializer if self.request.method == "POST" else ClientListSerializer
 
     def get_queryset(self):
-        return get_client_queryset(self.request.user)
+        qs = get_client_queryset(self.request.user)
+        stage = self.request.query_params.get("meeting_stage")
+        if stage:
+            qs = qs.filter(meeting_stage=stage)
+        return qs
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
@@ -71,7 +88,11 @@ class ClientNotesView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         client = self._get_client()
-        serializer.save(client=client, author=self.request.user.username)
+        author = self.request.user.display_name or self.request.user.username
+        note = serializer.save(client=client, author=author)
+        # Compile note text into client wiki (meeting_history / client_background)
+        from apps.agents.tasks import compile_wiki_from_note
+        compile_wiki_from_note.delay(str(note.id))
 
 
 class ClientMeetingsView(generics.ListAPIView):
@@ -144,4 +165,69 @@ class HouseholdMemberNoteView(generics.CreateAPIView):
         member = generics.get_object_or_404(
             HouseholdMember, pk=self.kwargs["mid"], household_id=self.kwargs["pk"]
         )
-        serializer.save(member=member, author=self.request.user.username)
+        author = self.request.user.display_name or self.request.user.username
+        serializer.save(member=member, author=author)
+
+
+class ClientTasksView(generics.ListCreateAPIView):
+    """GET/POST /api/v1/clients/{id}/tasks/"""
+    serializer_class = ClientTaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = get_client_queryset(self.request.user)
+        client = generics.get_object_or_404(qs, pk=self.kwargs["pk"])
+        return ClientTask.objects.filter(client=client)
+
+    def perform_create(self, serializer):
+        qs = get_client_queryset(self.request.user)
+        client = generics.get_object_or_404(qs, pk=self.kwargs["pk"])
+        serializer.save(client=client)
+
+
+class ClientTaskDetailView(generics.RetrieveUpdateAPIView):
+    """GET/PATCH /api/v1/clients/{pk}/tasks/{task_pk}/"""
+    serializer_class = ClientTaskSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        qs = get_client_queryset(self.request.user)
+        client = generics.get_object_or_404(qs, pk=self.kwargs["pk"])
+        return generics.get_object_or_404(ClientTask, pk=self.kwargs["task_pk"], client=client)
+
+
+class ClientMemoriesView(generics.ListAPIView):
+    """GET /api/v1/clients/{id}/memories/"""
+    serializer_class = ClientMemorySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = get_client_queryset(self.request.user)
+        client = generics.get_object_or_404(qs, pk=self.kwargs["pk"])
+        return ClientMemory.objects.filter(client=client)
+
+
+class ClientMeetingPrepView(APIView):
+    """POST /api/v1/clients/{id}/prep/
+    Body: { meeting_type (optional), focus (optional) }
+    Returns: { brief, articles_used, client_name }"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        qs = get_client_queryset(request.user)
+        generics.get_object_or_404(qs, pk=pk)
+
+        meeting_type = request.data.get("meeting_type", "")
+        focus = request.data.get("focus", "")
+
+        from apps.agents.meeting_prep import run
+        result = run(
+            client_id=str(pk),
+            meeting_type=meeting_type,
+            advisor_focus=focus,
+        )
+
+        if "error" in result:
+            return Response({"detail": result["error"]}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(result)

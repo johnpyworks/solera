@@ -1,170 +1,213 @@
-# Solera Portal — Developer Setup
+# Solera Portal Developer Setup
 
-## Project Structure
+## Repo layout
 
-```
+```text
 solera/
-├── vlad-portal/        # React frontend (Vite, port 5174)
-├── backend/            # Django API (port 8000)
-├── mcp-connector/      # Node.js MCP bridge (port 4000) — copy from G:\My Drive\Dev_Work\mcp\
-└── docker-compose.yml  # PostgreSQL + Redis
+|-- backend/         Django API
+|-- vlad-portal/     React frontend
+|-- mcp-connector/   Node service used by the app
+`-- docker-compose.yml
 ```
 
----
+## What you need installed
 
-## First-Time Setup
-
-### 1. Prerequisites
-
-- Docker Desktop installed and **Linux engine running** (open Docker Desktop from Start menu before running any docker commands)
+- Docker Desktop
 - Python 3.12
 - Node.js 20+
 
-### 2. Start infrastructure (PostgreSQL + Redis)
+Open Docker Desktop before running any Docker commands.
 
-```bash
+## First-time setup
+
+Follow these steps in order.
+
+### 1. Start PostgreSQL and Redis
+
+Open PowerShell:
+
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera
 docker compose up -d postgres redis
 ```
 
-Wait ~10 seconds for postgres to be healthy.
+Wait about 10 seconds.
 
-### 3. Backend — install dependencies and seed database
+If you want to check that they started:
 
-```bash
-cd backend
+```powershell
+docker compose ps
+```
+
+### 2. Set up the backend
+
+Open a new PowerShell window:
+
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera\backend
 pip install -r requirements.txt
+```
+
+Open [backend/.env](C:/Users/ywjayvee/PycharmProjects/solera/backend/.env:3) and make sure this line is exactly:
+
+```powershell
+DATABASE_URL=postgresql://postgres:password@localhost:5433/solera_dev
+```
+
+Then run:
+
+```powershell
 python manage.py migrate
 python manage.py seed_users
 python manage.py seed_data
 ```
 
-### 4. MCP Connector — copy and start
+If those finish without errors, the backend setup is done.
 
-Copy `G:\My Drive\Dev_Work\mcp\` → `solera\mcp-connector\`
+### 3. Set up the MCP connector
 
-```bash
-cd mcp-connector
+Copy this folder:
+
+```text
+G:\My Drive\Dev_Work\mcp\
+```
+
+Into this folder:
+
+```text
+C:\Users\ywjayvee\PycharmProjects\solera\mcp-connector\
+```
+
+After the files are copied, open another PowerShell window:
+
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera\mcp-connector
 npm install
 npm start
 ```
 
-MCP connector runs on port 4000. OAuth credentials persist in `~/.mcp-connector/credentials.json`.
+Leave that terminal open while using the app.
 
-### 5. Frontend — install dependencies
+### 4. Set up the frontend
 
-```bash
-cd vlad-portal
+Open another PowerShell window:
+
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera\vlad-portal
 npm install
 ```
 
----
+## Running the app
 
-## Running the Project (Every Time After Setup)
+After setup, you usually need 4 PowerShell windows open.
 
-You need **4 things running**. Open 4 terminals:
+### Window 1: Docker
 
-### Terminal 1 — Infrastructure (Docker)
-```bash
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera
 docker compose up -d postgres redis
 ```
-(Only needed once per machine restart. Skip if containers are already running.)
 
-### Terminal 2 — Django API
-```bash
+Only needed after a reboot or if containers were stopped.
+
+### Window 2: Backend
+
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera\backend
 python manage.py runserver 8000
 ```
 
-### Terminal 3 — MCP Connector
-```bash
+### Window 3: MCP connector
+
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera\mcp-connector
 npm start
 ```
 
-### Terminal 4 — React Frontend
-```bash
+### Window 4: Frontend
+
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera\vlad-portal
 npm run dev
 ```
 
-Open: **http://localhost:5174**
+Then open:
 
----
+```text
+http://localhost:5174
+```
 
-## Login Credentials
+## Login accounts
 
-| User | Role | Username | Default Password |
-|------|------|----------|-----------------|
-| Vlad Donets | Advisor | `vlad` | `changeme_vlad` |
-| Slava | Advisor | `slava` | `changeme_slava` |
-| Sevara | Assistant | `sevara` | `changeme_sevara` |
-| Admin | Super Admin | `admin` | `changeme_admin` |
+Use one of these after `python manage.py seed_users`:
 
-Passwords are set in `backend/.env` and can be changed there before seeding.
+| User | Username | Password |
+|------|----------|----------|
+| Vlad Donets | `vlad` | `changeme_vlad` |
+| Slava | `slava` | `changeme_slava` |
+| Sevara | `sevara` | `changeme_sevara` |
+| Admin | `admin` | `changeme_admin` |
 
----
+These passwords are set in [backend/.env](C:/Users/ywjayvee/PycharmProjects/solera/backend/.env:11).
 
-## Celery Workers (needed for AI agents and background tasks)
+## Common problems
 
-For meeting processing, 48hr reminders, and Outlook sync to work, run these two additional terminals:
+### Error: `password authentication failed for user`
 
-### Terminal 5 — Celery Worker
-```bash
+This usually means [backend/.env](C:/Users/ywjayvee/PycharmProjects/solera/backend/.env:3) has the wrong database port.
+
+Use:
+
+```powershell
+DATABASE_URL=postgresql://postgres:password@localhost:5433/solera_dev
+```
+
+Do not use `5432`.
+
+### Error: `relation "users_advisoruser" does not exist`
+
+This was caused by missing app migrations in an older version of the repo. With the current repo, `python manage.py migrate` should work.
+
+## Useful Docker commands
+
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera
+docker compose ps
+docker compose logs postgres
+docker compose down
+```
+
+## Reset demo data
+
+From the backend folder:
+
+```powershell
 cd C:\Users\ywjayvee\PycharmProjects\solera\backend
-celery -A config worker -l info
-```
-
-### Terminal 6 — Celery Beat (scheduled tasks)
-```bash
-cd C:\Users\ywjayvee\PycharmProjects\solera\backend
-celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
-```
-
----
-
-## Checking Docker Container Status
-
-```bash
-docker compose ps           # see what's running
-docker compose logs postgres # check postgres logs
-docker compose down         # stop everything
-```
-
----
-
-## Re-seeding (reset to demo data)
-
-```bash
-cd backend
 python manage.py flush --no-input
 python manage.py seed_users
 python manage.py seed_data
 ```
 
----
+## Optional background workers
 
-## Environment Variables
+These are only needed for background jobs such as reminders and some AI features.
 
-All config lives in `backend/.env`. Key values:
+### Celery worker
 
-| Variable | Purpose |
-|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `ANTHROPIC_API_KEY` | Claude API key (for AI agents) |
-| `OPENAI_API_KEY` | OpenAI API key (optional fallback) |
-| `MCP_BASE_URL` | MCP connector URL (default: http://localhost:4000) |
-| `CELERY_BROKER_URL` | Redis URL (default: redis://localhost:6379/0) |
-
----
-
-## Questionnaire Form (Public)
-
-The client questionnaire is accessible without login:
-
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera\backend
+celery -A config worker -l info
 ```
+
+### Celery beat
+
+```powershell
+cd C:\Users\ywjayvee\PycharmProjects\solera\backend
+celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+```
+
+## Public questionnaire page
+
+```text
 http://localhost:5174/form/tok_demo
 ```
-
-(Uses the `tok_demo` seed token for Sarah Chen.)

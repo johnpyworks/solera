@@ -8,8 +8,15 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount, try to restore session from refresh token
+  // On mount, try to restore session from refresh token.
+  // AbortController prevents the StrictMode double-invocation race: React 18
+  // mounts→unmounts→remounts in dev, running this effect twice. Without abort,
+  // both runs send the same refresh token simultaneously; the server blacklists
+  // it on the first request, the second gets 401 and clears the access token.
+  // Aborting the first run before any I/O ensures only one request is sent.
   useEffect(() => {
+    const controller = new AbortController();
+
     async function restoreSession() {
       const refresh = sessionStorage.getItem('refresh_token');
       if (!refresh) {
@@ -18,32 +25,35 @@ export function AuthProvider({ children }) {
         return;
       }
       try {
-        // Refresh the access token
         const resp = await fetch('/api/v1/auth/refresh/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh }),
+          signal: controller.signal,
         });
         if (!resp.ok) throw new Error('refresh failed');
         const data = await resp.json();
         setAccessToken(data.access);
         if (data.refresh) sessionStorage.setItem('refresh_token', data.refresh);
 
-        // Fetch user info
         const meResp = await fetch('/api/v1/auth/me/', {
           headers: { Authorization: `Bearer ${data.access}` },
+          signal: controller.signal,
         });
         if (!meResp.ok) throw new Error('me failed');
         const me = await meResp.json();
         setUser(me);
-      } catch (_) {
+      } catch (err) {
+        if (err.name === 'AbortError') return; // Discarded by StrictMode — ignore
         clearTokens();
         setUser(false);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
+
     restoreSession();
+    return () => controller.abort();
   }, []);
 
   function logout() {

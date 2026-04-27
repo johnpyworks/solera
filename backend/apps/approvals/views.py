@@ -38,11 +38,17 @@ class ApprovalDetailView(generics.RetrieveUpdateAPIView):
         return get_approval_queryset(self.request.user)
 
     def perform_update(self, serializer):
-        # Mark as edited if draft_content changes
+        # Mark as edited if draft_content changes; append snapshot to edit_history
         instance = self.get_object()
         new_content = self.request.data.get("draft_content")
         if new_content and new_content != instance.draft_content:
-            serializer.save(status="edited")
+            history = list(instance.edit_history or [])
+            history.append({
+                "edited_at": timezone.now().isoformat(),
+                "edited_by": self.request.user.username,
+                "previous_content": instance.draft_content,
+            })
+            serializer.save(status="edited", edit_history=history)
         else:
             serializer.save()
 
@@ -75,10 +81,12 @@ class ApprovalApproveView(APIView):
                 body = draft.get("body", "")
                 if to_email and subject:
                     result = MCPClient().send_outlook_email(to_email, subject, body)
-                    message_id = result.get("messageId", "")
-                    item.sent_at = timezone.now()
-                    item.outlook_message_id = message_id
-                    item.save()
+                    if result.get("ok"):
+                        item.sent_at = timezone.now()
+                        item.outlook_message_id = result.get("messageId", "")
+                        item.save()
+                    else:
+                        raise Exception(result.get("message", "Send returned ok=false"))
             except Exception as e:
                 # Log but don't fail approval — email send is best-effort
                 from apps.agents.models import AgentLog
@@ -90,6 +98,119 @@ class ApprovalApproveView(APIView):
                     status="failed",
                     error_msg=str(e),
                 )
+
+        # If action_items → create ClientTask rows + email both parties
+        elif item.item_type == "action_items":
+            from apps.clients.models import ClientTask
+            tasks = item.draft_content.get("tasks", [])
+            for t in tasks:
+                if t.get("task"):
+                    ClientTask.objects.create(
+                        client=item.client,
+                        title=t["task"],
+                        owner_type=t.get("owner", "advisor"),
+                        due_date=t.get("due") or None,
+                        source_meeting=None,
+                    )
+            # Email summary to client and advisor (best-effort)
+            try:
+                from apps.mcp_bridge.client import MCPClient
+                body_lines = [
+                    "• [{}] {}{}".format(
+                        t.get("owner", "advisor"),
+                        t["task"],
+                        f" — Due {t['due']}" if t.get("due") else "",
+                    )
+                    for t in tasks if t.get("task")
+                ]
+                body = "Action items from our meeting:\n\n" + "\n".join(body_lines)
+                subject = f"Action Items — {item.client_name}"
+                if item.client and item.client.email:
+                    MCPClient().send_outlook_email(item.client.email, subject, body)
+                if item.owner and item.owner.email:
+                    MCPClient().send_outlook_email(item.owner.email, f"[Internal] {subject}", body)
+            except Exception:
+                pass
+
+        # If calendar_event → always save Meeting to DB, then try MCP invite
+        elif item.item_type == "calendar_event":
+            from datetime import datetime, timedelta
+            from apps.meetings.models import Meeting
+            draft = item.draft_content
+            calendar_sent = False
+            calendar_error = ""
+
+            if draft.get("proposed_date"):
+                try:
+                    start_dt = datetime.fromisoformat(draft["proposed_date"])
+                    duration = int(draft.get("duration_min", 60))
+
+                    # Create Meeting DB record (skip if one already exists for this approval)
+                    meeting = Meeting.objects.filter(
+                        client=item.client,
+                        scheduled_at=start_dt,
+                        owner=item.owner,
+                    ).first()
+                    if not meeting:
+                        meeting = Meeting.objects.create(
+                            client=item.client,
+                            scheduled_at=start_dt,
+                            owner=item.owner,
+                            meeting_type=draft.get("meeting_type", "Other"),
+                            duration_min=duration,
+                            location=draft.get("location", ""),
+                            is_past=False,
+                        )
+
+                    # Best-effort: send Outlook calendar invite via MCP
+                    try:
+                        from apps.mcp_bridge.client import MCPClient
+                        result = MCPClient().create_meeting_event(
+                            subject=draft.get("subject", "Meeting"),
+                            start=start_dt.isoformat(),
+                            end=(start_dt + timedelta(minutes=duration)).isoformat(),
+                            attendees=draft.get("attendees", []),
+                            location=draft.get("location", ""),
+                            html_body=draft.get("body", ""),
+                            platform=draft.get("platform", "zoom"),
+                            duration_min=duration,
+                        )
+                        print(f"[Approval] calendar_event MCP result: {result}")
+                        if result.get("ok"):
+                            meeting.zoom_meeting_id = result.get("zoomMeetingId", "") or ""
+                            meeting.zoom_join_url = result.get("joinUrl", "") or ""
+                            meeting.outlook_event_id = result.get("eventId", "") or ""
+                            meeting.save()
+                            calendar_sent = True
+                            # Immediately check if this meeting falls in 48hr reminder window
+                            try:
+                                from apps.agents.scheduler import check_and_queue_reminders
+                                check_and_queue_reminders()
+                            except Exception as rem_e:
+                                print(f"[Approval] immediate reminder check failed: {rem_e}")
+                            # Report partial success: Zoom created but Outlook calendar event failed
+                            if not result.get("outlookCreated") and result.get("outlookError"):
+                                emails_sent = result.get("emailsSent", 0)
+                                calendar_error = (
+                                    f"Zoom meeting created, {emails_sent} email invite(s) sent. "
+                                    f"Outlook calendar entry skipped: {result.get('outlookError')}"
+                                )
+                        else:
+                            calendar_error = result.get("message", "MCP returned not-ok")
+                    except Exception as e:
+                        calendar_error = str(e)
+                        print(f"[Approval] calendar_event MCP exception: {e}")
+
+                except Exception as e:
+                    calendar_error = f"Date parse error: {e}"
+            else:
+                calendar_error = "No date set — invite not sent"
+
+            # Early return with calendar outcome flags
+            response_data = ApprovalItemSerializer(item).data
+            response_data["calendar_sent"] = calendar_sent
+            response_data["calendar_error"] = calendar_error
+            return Response(response_data)
 
         return Response(ApprovalItemSerializer(item).data)
 
