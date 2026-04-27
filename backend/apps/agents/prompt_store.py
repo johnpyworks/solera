@@ -4,31 +4,17 @@ Agent files import get_prompt() and the template wrapper functions from here.
 prompts.py is kept unchanged as the authoritative default text reference.
 """
 from apps.agents.prompts import (
-    SCRIBE_SYSTEM, SCRIBE_FOLLOWUP, SCRIBE_SUMMARY, SCRIBE_RUSSIAN,
+    SCRIBE_SYSTEM, SCRIBE_FOLLOWUP, SCRIBE_RUSSIAN,
     SERVICE_AGENT_SYSTEM, SERVICE_AGENT_PROMPT,
     SCHEDULER_SYSTEM, SCHEDULER_REMINDER_48HR,
-    CHAT_SYSTEM, MEETING_NOTES_SYSTEM,
-    NEXT_MEETING_SYSTEM, MEMORY_EXTRACTION_SYSTEM, ACTION_ITEMS_SYSTEM,
+    CHAT_SYSTEM,
+    NEXT_MEETING_SYSTEM, MEMORY_EXTRACTION_SYSTEM,
+    WIKI_CLASSIFIER_SYSTEM, WIKI_CLASSIFIER_USER,
+    WIKI_ARTICLE_SYSTEM, WIKI_ARTICLE_USER,
+    WIKI_INDEX_SYSTEM, WIKI_INDEX_USER,
+    MEETING_PREP_SELECTOR_SYSTEM, MEETING_PREP_SELECTOR_USER,
+    MEETING_PREP_BRIEF_SYSTEM, MEETING_PREP_BRIEF_USER,
 )
-
-# ── Template strings extracted from the f-string function bodies in prompts.py ──
-# {transcript} is used without a slice — callers pre-truncate before .format()
-
-_MEETING_NOTES_USER = """Analyze this {meeting_type} meeting transcript for client {client_name} and produce structured meeting notes.
-
-Return ONLY a valid JSON object with this exact structure:
-{{
-  "summary": "2-3 sentence overview of the meeting",
-  "key_points": ["point 1", "point 2", ...],
-  "decisions": ["decision 1", ...],
-  "action_items": [
-    {{"owner": "advisor", "task": "description", "due": "YYYY-MM-DD or null"}},
-    {{"owner": "client", "task": "description", "due": "YYYY-MM-DD or null"}}
-  ]
-}}
-
-Transcript:
-{transcript}"""
 
 _NEXT_MEETING_USER = """Review this meeting transcript and determine if a next meeting was scheduled or discussed.
 
@@ -75,23 +61,6 @@ Maximum 10 key-value pairs.
 Transcript:
 {transcript}"""
 
-_ACTION_USER = """Extract concrete action items from this financial advisory meeting with client {client_name}.
-
-Today: {today}
-
-Return ONLY a valid JSON object:
-{{
-  "tasks": [
-    {{"owner": "advisor", "task": "Send Penn Mutual illustration to client", "due": "YYYY-MM-DD or null"}},
-    {{"owner": "client", "task": "Gather last 3 years of tax returns", "due": "YYYY-MM-DD or null"}}
-  ]
-}}
-
-Only include tasks that were explicitly mentioned or agreed upon. Both advisor and client tasks.
-
-Transcript:
-{transcript}"""
-
 _CHAT_BASE = (
     "You are a knowledgeable AI assistant for Solera Financial Advisory, "
     "supporting advisors Vlad and Slava. "
@@ -109,7 +78,6 @@ _CHAT_BASE = (
 PROMPT_DEFAULTS: dict[str, str] = {
     "scribe_system":            SCRIBE_SYSTEM,
     "scribe_followup":          SCRIBE_FOLLOWUP,
-    "scribe_summary":           SCRIBE_SUMMARY,
     "scribe_russian":           SCRIBE_RUSSIAN,
     "service_agent_system":     SERVICE_AGENT_SYSTEM,
     "service_agent_prompt":     SERVICE_AGENT_PROMPT,
@@ -117,14 +85,20 @@ PROMPT_DEFAULTS: dict[str, str] = {
     "scheduler_reminder_48hr":  SCHEDULER_REMINDER_48HR,
     "chat_system":              CHAT_SYSTEM,
     "chat_system_base":         _CHAT_BASE,
-    "meeting_notes_system":     MEETING_NOTES_SYSTEM,
-    "meeting_notes_user":       _MEETING_NOTES_USER,
     "next_meeting_system":      NEXT_MEETING_SYSTEM,
     "next_meeting_user":        _NEXT_MEETING_USER,
     "memory_extraction_system": MEMORY_EXTRACTION_SYSTEM,
     "memory_extraction_user":   _MEMORY_USER,
-    "action_items_system":      ACTION_ITEMS_SYSTEM,
-    "action_items_user":        _ACTION_USER,
+    "wiki_classifier_system":   WIKI_CLASSIFIER_SYSTEM,
+    "wiki_classifier_user":     WIKI_CLASSIFIER_USER,
+    "wiki_article_system":      WIKI_ARTICLE_SYSTEM,
+    "wiki_article_user":        WIKI_ARTICLE_USER,
+    "wiki_index_system":        WIKI_INDEX_SYSTEM,
+    "wiki_index_user":          WIKI_INDEX_USER,
+    "meeting_prep_article_selector_system": MEETING_PREP_SELECTOR_SYSTEM,
+    "meeting_prep_article_selector_user":   MEETING_PREP_SELECTOR_USER,
+    "meeting_prep_brief_system":            MEETING_PREP_BRIEF_SYSTEM,
+    "meeting_prep_brief_user":              MEETING_PREP_BRIEF_USER,
 }
 
 
@@ -136,16 +110,6 @@ def get_prompt(key: str) -> str:
         return obj.content if obj else PROMPT_DEFAULTS.get(key, "")
     except Exception:
         return PROMPT_DEFAULTS.get(key, "")
-
-
-# ── Template wrapper functions (identical signatures to prompts.py functions) ─
-
-def meeting_notes_user_prompt(transcript: str, client_name: str, meeting_type: str) -> str:
-    return get_prompt("meeting_notes_user").format(
-        client_name=client_name,
-        meeting_type=meeting_type,
-        transcript=transcript[:8000],
-    )
 
 
 def next_meeting_user_prompt(
@@ -180,9 +144,3 @@ def memory_extraction_user_prompt(
     )
 
 
-def action_items_user_prompt(transcript: str, client_name: str, today: str) -> str:
-    return get_prompt("action_items_user").format(
-        client_name=client_name,
-        today=today,
-        transcript=transcript[:6000],
-    )

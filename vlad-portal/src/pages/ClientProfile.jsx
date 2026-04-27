@@ -17,7 +17,9 @@ import {
   ClipboardList,
   Check,
   Sparkles,
+  BookOpen,
 } from "lucide-react";
+import MDEditor from "@uiw/react-md-editor";
 import { useApp } from "../context/AppContext";
 import { apiFetch, apiUpload } from "../api/client";
 import { ApprovalCard } from "./ApprovalQueue";
@@ -778,9 +780,45 @@ function NotesTab({ notes, notesLoading, onAddNote }) {
 
 // ── Files Tab ─────────────────────────────────────────────────
 
+const ACCEPTED_TYPES = ".pdf,.docx,.xlsx,.txt,.vtt,.srt";
+const FILE_TYPE_ICONS = { pdf: "PDF", docx: "DOC", xlsx: "XLS", txt: "TXT", transcript: "TXT", other: "FILE" };
+
 function FilesTab({ clientId }) {
-  const { clientFiles } = useApp();
-  const files = clientFiles[clientId] || [];
+  const [files, setFiles] = useState(null); // null = loading
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [wikiStatus, setWikiStatus] = useState({}); // { [fileId]: "indexing" | "done" }
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    apiFetch(`/clients/${clientId}/files/`)
+      .then(d => setFiles(Array.isArray(d) ? d : (d.results || [])))
+      .catch(() => setFiles([]));
+  }, [clientId]);
+
+  async function handleUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError("");
+    try {
+      const formData = new FormData();
+      formData.append("client", clientId);
+      formData.append("file", file);
+      const newFile = await apiUpload("/documents/upload/", formData);
+      setFiles(prev => [newFile, ...(prev || [])]);
+      // Show "indexing" badge briefly
+      setWikiStatus(prev => ({ ...prev, [newFile.id]: "indexing" }));
+      setTimeout(() => {
+        setWikiStatus(prev => ({ ...prev, [newFile.id]: "done" }));
+      }, 8000);
+    } catch (err) {
+      setUploadError(err.message || "Upload failed.");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
 
   function formatDate(iso) {
     return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -788,29 +826,54 @@ function FilesTab({ clientId }) {
 
   return (
     <div className="files-tab">
-      <div className="files-upload-hint">
-        <div className="upload-placeholder">
-          <Upload size={18} />
-          <span>File uploads will be available in Phase 2 (Django backend)</span>
-        </div>
+      {/* Upload area */}
+      <div
+        className="file-drop-area"
+        onClick={() => !uploading && fileInputRef.current?.click()}
+        style={{ cursor: uploading ? "default" : "pointer" }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_TYPES}
+          style={{ display: "none" }}
+          onChange={handleUpload}
+        />
+        {uploading ? (
+          <span className="file-drop-hint"><Clock size={18} /> Uploading and indexing…</span>
+        ) : (
+          <span className="file-drop-hint">
+            <Upload size={18} />
+            <span>Click to upload a file</span>
+            <span style={{ fontSize: 11, color: "var(--text-sm)" }}>PDF · Word · Excel · TXT · VTT</span>
+          </span>
+        )}
       </div>
-      {files.length === 0 ? (
-        <p className="empty-state">No files attached to this client yet.</p>
+      {uploadError && <div className="form-error" style={{ marginTop: 8 }}>{uploadError}</div>}
+
+      {/* File list */}
+      {files === null ? (
+        <p className="empty-state">Loading files…</p>
+      ) : files.length === 0 ? (
+        <p className="empty-state">No files uploaded yet. Upload a document to start building the client knowledge base.</p>
       ) : (
-        <div className="files-list">
+        <div className="files-list" style={{ marginTop: 16 }}>
           {files.map((f) => (
             <div key={f.id} className="file-item">
-              <div className="file-icon">
-                <FileText size={16} />
-              </div>
+              <div className="file-type-chip">{FILE_TYPE_ICONS[f.file_type] || "FILE"}</div>
               <div className="file-info">
                 <div className="file-name">{f.name}</div>
                 <div className="file-meta">
-                  {f.size_kb} KB · Uploaded {formatDate(f.uploaded_at)} by {f.uploaded_by}
-                  {f.meeting_id && " · linked to meeting"}
+                  {f.size_kb} KB · {formatDate(f.created_at)} · by {f.uploaded_by}
+                  {f.meeting && " · linked to meeting"}
                 </div>
               </div>
-              <span className="file-type-badge">{FILE_TYPE_LABELS[f.type] || f.type}</span>
+              {wikiStatus[f.id] === "indexing" && (
+                <span className="file-wiki-badge indexing"><Clock size={11} /> Indexing…</span>
+              )}
+              {wikiStatus[f.id] === "done" && (
+                <span className="file-wiki-badge done"><CheckCircle size={11} /> Indexed</span>
+              )}
             </div>
           ))}
         </div>
@@ -889,6 +952,112 @@ function SendQuestionnaireModal({ client, onClose }) {
   );
 }
 
+// ── Meeting Prep Panel ────────────────────────────────────────
+
+const MEETING_TYPES_PREP = [
+  "", "Discovery", "LEAP Process", "Implementation",
+  "Solera Heartbeat", "30-Day Check-In", "Annual Review", "Other",
+];
+
+function MeetingPrepPanel({ clientId, clientName, onClose }) {
+  const [meetingType, setMeetingType] = useState("");
+  const [focus, setFocus] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [brief, setBrief] = useState("");
+  const [articlesUsed, setArticlesUsed] = useState([]);
+  const [error, setError] = useState("");
+
+  async function handleGenerate() {
+    setStatus("loading");
+    setError("");
+    try {
+      const result = await apiFetch(`/clients/${clientId}/prep/`, {
+        method: "POST",
+        body: JSON.stringify({ meeting_type: meetingType, focus }),
+      });
+      setBrief(result.brief || "");
+      setArticlesUsed(result.articles_used || []);
+      setStatus("done");
+    } catch (err) {
+      setError(err.message || "Failed to generate prep brief.");
+      setStatus("error");
+    }
+  }
+
+  return (
+    <div className="prep-panel-overlay" onClick={onClose}>
+      <div className="prep-panel" onClick={e => e.stopPropagation()}>
+        <div className="prep-panel-header">
+          <div className="prep-panel-title">
+            <BookOpen size={16} />
+            <span>Meeting Prep — {clientName}</span>
+          </div>
+          <button className="icon-btn" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        {status !== "done" && (
+          <div className="prep-panel-form">
+            <div className="form-row">
+              <label>Meeting type (optional)</label>
+              <select className="form-input" value={meetingType} onChange={e => setMeetingType(e.target.value)}>
+                {MEETING_TYPES_PREP.map(t => <option key={t} value={t}>{t || "— select or leave blank —"}</option>)}
+              </select>
+            </div>
+            <div className="form-row">
+              <label>Focus area (optional)</label>
+              <input
+                className="form-input"
+                placeholder='e.g. "insurance only" or "review open action items"'
+                value={focus}
+                onChange={e => setFocus(e.target.value)}
+              />
+            </div>
+            {status === "error" && <div className="form-error">{error}</div>}
+            <button
+              className="btn btn-primary"
+              onClick={handleGenerate}
+              disabled={status === "loading"}
+              style={{ width: "100%" }}
+            >
+              {status === "loading" ? (
+                <><Clock size={14} /> Generating brief…</>
+              ) : (
+                <><Sparkles size={14} /> Generate Prep Brief</>
+              )}
+            </button>
+            {status === "loading" && (
+              <p className="prep-loading-hint">Reading client knowledge base… this takes 15–30 seconds.</p>
+            )}
+          </div>
+        )}
+
+        {status === "done" && (
+          <div className="prep-panel-result">
+            {articlesUsed.length > 0 && (
+              <div className="prep-sources">
+                <span className="prep-sources-label">Sources used:</span>
+                {articlesUsed.map(a => (
+                  <span key={a.type} className="prep-source-tag">{a.title}</span>
+                ))}
+              </div>
+            )}
+            <div className="prep-brief-body" data-color-mode="dark">
+              <MDEditor.Markdown source={brief} />
+            </div>
+            <button
+              className="btn btn-ghost"
+              style={{ marginTop: 16 }}
+              onClick={() => setStatus("idle")}
+            >
+              Generate New Brief
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ClientProfile ────────────────────────────────────────
 
 export default function ClientProfile({ onOpenChat }) {
@@ -897,6 +1066,7 @@ export default function ClientProfile({ onOpenChat }) {
   const { clientFiles, getSubmissionsForClient } = useApp();
   const [activeTab, setActiveTab] = useState("Overview");
   const [showQModal, setShowQModal] = useState(false);
+  const [showPrepPanel, setShowPrepPanel] = useState(false);
 
   // Fetch client from real API
   const [client, setClient] = useState(null);
@@ -1059,6 +1229,10 @@ export default function ClientProfile({ onOpenChat }) {
             <ClipboardList size={15} />
             Send Questionnaire
           </button>
+          <button className="btn btn-ghost" onClick={() => setShowPrepPanel(true)}>
+            <BookOpen size={15} />
+            Prep for Meeting
+          </button>
           <button className="btn btn-primary" onClick={onOpenChat}>
             <MessageSquare size={15} />
             Ask AI about {firstName}
@@ -1182,6 +1356,14 @@ export default function ClientProfile({ onOpenChat }) {
 
       {showQModal && (
         <SendQuestionnaireModal client={client} onClose={() => setShowQModal(false)} />
+      )}
+
+      {showPrepPanel && (
+        <MeetingPrepPanel
+          clientId={id}
+          clientName={client.full_name}
+          onClose={() => setShowPrepPanel(false)}
+        />
       )}
     </div>
   );

@@ -62,6 +62,16 @@ def sync_outlook_calendar():
     return {"upserted": upserted}
 
 
+@shared_task(name="agents.compile_wiki_from_note")
+def compile_wiki_from_note(note_id: str):
+    from apps.agents.wiki_compiler import run_from_note
+    try:
+        result = run_from_note(note_id)
+        return {"status": "complete", **result}
+    except Exception as e:
+        return {"status": "failed", "note_id": note_id, "error": str(e)}
+
+
 @shared_task(name="agents.check_and_queue_reminders")
 def check_and_queue_reminders():
     from apps.agents.scheduler import check_and_queue_reminders as _check

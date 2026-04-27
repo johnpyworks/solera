@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import ClientTasksView, ClientTaskDetailView, ClientMemoriesView
+from .views import ClientTasksView, ClientTaskDetailView, ClientMemoriesView, ClientMeetingPrepView
 
 urlpatterns = [
     path("", views.ClientListView.as_view(), name="client-list"),
@@ -13,4 +13,5 @@ urlpatterns = [
     path("<uuid:pk>/tasks/", ClientTasksView.as_view(), name="client-tasks"),
     path("<uuid:pk>/tasks/<uuid:task_pk>/", ClientTaskDetailView.as_view(), name="client-task-detail"),
     path("<uuid:pk>/memories/", ClientMemoriesView.as_view(), name="client-memories"),
+    path("<uuid:pk>/prep/", ClientMeetingPrepView.as_view(), name="client-meeting-prep"),
 ]

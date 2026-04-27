@@ -57,9 +57,10 @@ class DocumentUploadView(APIView):
             uploaded_by=request.user.username,
         )
 
-        # Queue PageIndex tree build
-        from apps.documents.tasks import build_page_index
+        # Queue PageIndex tree build + wiki compilation
+        from apps.documents.tasks import build_page_index, compile_wiki
         build_page_index.delay(str(cf.id))
+        compile_wiki.delay(str(cf.id))
 
         return Response(ClientFileSerializer(cf).data, status=status.HTTP_201_CREATED)
 

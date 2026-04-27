@@ -164,3 +164,52 @@ class ClientMemory(models.Model):
     class Meta:
         unique_together = [("client", "key")]
         ordering = ["key"]
+
+
+class ClientWikiArticle(models.Model):
+    ARTICLE_TYPE_CHOICES = [
+        ("leap_position",      "LEAP Position"),
+        ("life_insurance",     "Life Insurance"),
+        ("investment_accounts","Investment Accounts"),
+        ("annual_review",      "Annual Review"),
+        ("client_background",  "Client Background"),
+        ("meeting_history",    "Meeting History"),
+        ("other",              "Other"),
+    ]
+
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    client       = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="wiki_articles")
+    article_type = models.CharField(max_length=30, choices=ARTICLE_TYPE_CHOICES)
+    title        = models.CharField(max_length=200)
+    body         = models.TextField()
+    source_files = models.JSONField(default=list)  # list of ClientFile PKs or filenames
+    document_year = models.IntegerField(null=True, blank=True)  # extracted from content/filename
+    is_latest    = models.BooleanField(default=True)  # most recent for this article_type per client
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-document_year", "-last_updated"]
+
+    def __str__(self):
+        year = f" ({self.document_year})" if self.document_year else ""
+        return f"{self.title}{year} — {self.client.name}"
+
+    def save(self, *args, **kwargs):
+        # When saving a new latest article, demote older ones of the same type
+        if self.is_latest:
+            ClientWikiArticle.objects.filter(
+                client=self.client,
+                article_type=self.article_type,
+            ).exclude(pk=self.pk).update(is_latest=False)
+        super().save(*args, **kwargs)
+
+
+class ClientWikiIndex(models.Model):
+    """One per client — compact text summary of all wiki articles for fast context loading."""
+    client      = models.OneToOneField(Client, on_delete=models.CASCADE, related_name="wiki_index")
+    body        = models.TextField()  # compact markdown: article titles + 1-line summaries
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Wiki Index — {self.client.name}"

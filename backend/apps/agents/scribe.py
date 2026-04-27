@@ -1,4 +1,4 @@
-"""Scribe Agent — transcript/notes → email drafts in ApprovalItem queue."""
+"""Scribe Agent — transcript/notes → 2 approval items: client email + calendar event."""
 import json
 from datetime import date
 
@@ -6,8 +6,6 @@ from apps.agents.models import AgentLog
 from apps.agents.provider import AIProvider
 from apps.agents.prompt_store import (
     get_prompt,
-    meeting_notes_user_prompt,
-    action_items_user_prompt,
     next_meeting_user_prompt,
     memory_extraction_user_prompt,
 )
@@ -62,7 +60,7 @@ def run(meeting_id: str) -> dict:
 
     created = []
 
-    # ── Follow-up email ───────────────────────────────────────────────────────
+    # ── Client follow-up email (summary + both to-do lists) ──────────────────
     if settings.toggle_email_followup:
         system = get_prompt("scribe_system") + memory_context
         if is_russian:
@@ -72,6 +70,7 @@ def run(meeting_id: str) -> dict:
             client_name=client.name,
             meeting_type=meeting.meeting_type,
             meeting_date=meeting_date,
+            advisor_name=advisor_name,
             notes=notes[:3000],
             client_context=client_context,
         )
@@ -80,7 +79,7 @@ def run(meeting_id: str) -> dict:
 
         draft = {
             "to": client.email,
-            "subject": f"Following Up on Our {meeting.meeting_type} Meeting",
+            "subject": f"Following Up on Our {meeting.meeting_type} — {meeting_date}",
             "body": body,
         }
         if is_russian:
@@ -93,78 +92,6 @@ def run(meeting_id: str) -> dict:
             client_name=client.name,
             agent="Scribe",
             draft_content=draft,
-        )
-        created.append(str(item.id))
-
-    # ── Internal summary ──────────────────────────────────────────────────────
-    if settings.toggle_email_summary:
-        summary_prompt = get_prompt("scribe_summary").format(
-            client_name=client.name,
-            meeting_type=meeting.meeting_type,
-            meeting_date=meeting_date,
-            notes=notes[:3000],
-        )
-
-        body = ai.complete(system_prompt=get_prompt("scribe_system") + memory_context, user_prompt=summary_prompt)["text"]
-
-        item = ApprovalItem.objects.create(
-            owner=meeting.owner,
-            item_type="email_summary",
-            client=client,
-            client_name=client.name,
-            agent="Scribe",
-            draft_content={
-                "to": advisor_email,   # internal summary goes to advisor, not client
-                "subject": f"[Internal] {meeting.meeting_type} Notes — {client.name} — {meeting_date}",
-                "body": body,
-            },
-        )
-        created.append(str(item.id))
-
-    # ── Meeting notes ─────────────────────────────────────────────────────────
-    notes_result = ai.complete(
-        get_prompt("meeting_notes_system"),
-        meeting_notes_user_prompt(notes, client.name, meeting.meeting_type),
-    )
-    notes_text = _strip_code_fence(notes_result["text"].strip())
-    try:
-        notes_data = json.loads(notes_text)
-    except (json.JSONDecodeError, ValueError):
-        notes_data = {"summary": notes_text, "key_points": [], "decisions": [], "action_items": []}
-
-    item = ApprovalItem.objects.create(
-        owner=meeting.owner,
-        item_type="meeting_notes",
-        client=client,
-        client_name=client.name,
-        agent="Scribe",
-        urgency="normal",
-        status="pending",
-        draft_content=notes_data,
-    )
-    created.append(str(item.id))
-
-    # ── Action items ──────────────────────────────────────────────────────────
-    actions_result = ai.complete(
-        get_prompt("action_items_system"),
-        action_items_user_prompt(notes, client.name, today_str),
-    )
-    actions_text = _strip_code_fence(actions_result["text"].strip())
-    try:
-        actions_data = json.loads(actions_text)
-    except (json.JSONDecodeError, ValueError):
-        actions_data = {"tasks": []}
-
-    if actions_data.get("tasks"):
-        item = ApprovalItem.objects.create(
-            owner=meeting.owner,
-            item_type="action_items",
-            client=client,
-            client_name=client.name,
-            agent="Scribe",
-            urgency="normal",
-            status="pending",
-            draft_content=actions_data,
         )
         created.append(str(item.id))
 

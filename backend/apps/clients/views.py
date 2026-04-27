@@ -89,7 +89,10 @@ class ClientNotesView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         client = self._get_client()
         author = self.request.user.display_name or self.request.user.username
-        serializer.save(client=client, author=author)
+        note = serializer.save(client=client, author=author)
+        # Compile note text into client wiki (meeting_history / client_background)
+        from apps.agents.tasks import compile_wiki_from_note
+        compile_wiki_from_note.delay(str(note.id))
 
 
 class ClientMeetingsView(generics.ListAPIView):
@@ -202,3 +205,29 @@ class ClientMemoriesView(generics.ListAPIView):
         qs = get_client_queryset(self.request.user)
         client = generics.get_object_or_404(qs, pk=self.kwargs["pk"])
         return ClientMemory.objects.filter(client=client)
+
+
+class ClientMeetingPrepView(APIView):
+    """POST /api/v1/clients/{id}/prep/
+    Body: { meeting_type (optional), focus (optional) }
+    Returns: { brief, articles_used, client_name }"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        qs = get_client_queryset(request.user)
+        generics.get_object_or_404(qs, pk=pk)
+
+        meeting_type = request.data.get("meeting_type", "")
+        focus = request.data.get("focus", "")
+
+        from apps.agents.meeting_prep import run
+        result = run(
+            client_id=str(pk),
+            meeting_type=meeting_type,
+            advisor_focus=focus,
+        )
+
+        if "error" in result:
+            return Response({"detail": result["error"]}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(result)
