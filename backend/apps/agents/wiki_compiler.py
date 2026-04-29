@@ -109,12 +109,23 @@ def run(file_id: str) -> dict:
     if not text.strip() or text.startswith("[Text extraction failed"):
         AgentLog.objects.create(
             agent_name="WikiCompiler",
+            task_label="Wiki article compilation",
             action=f"Text extraction failed for {cf.name}",
             client=client,
             client_name=client.name,
             status="failed",
         )
         return {"error": "Could not extract text from file"}
+
+    # Create log before AI calls so costs can be linked
+    log = AgentLog.objects.create(
+        agent_name="WikiCompiler",
+        task_label="Wiki article compilation",
+        action=f"Compiling wiki article from {cf.name}",
+        client=client,
+        client_name=client.name,
+        status="running",
+    )
 
     # 2. Classify document
     classify_result = ai.complete(
@@ -123,6 +134,7 @@ def run(file_id: str) -> dict:
             client_name=client.name,
             text=text[:3000],
         ),
+        agent_log=log,
     )
     try:
         classification = json.loads(_strip_code_fence(classify_result["text"]))
@@ -153,6 +165,9 @@ def run(file_id: str) -> dict:
         existing_section = "No existing article — write a fresh one."
 
     # 4. Write the wiki article
+    log.task_label = f"Wiki article: {article_type}"
+    log.save(update_fields=["task_label"])
+
     article_result = ai.complete(
         system_prompt=get_prompt("wiki_article_system"),
         user_prompt=get_prompt("wiki_article_user").format(
@@ -162,6 +177,7 @@ def run(file_id: str) -> dict:
             existing_section=existing_section,
             text=text[:5000],
         ),
+        agent_log=log,
     )
     article_body = article_result["text"].strip()
 
@@ -187,14 +203,10 @@ def run(file_id: str) -> dict:
     # 6. Rebuild the compact index
     _rebuild_index(client)
 
-    AgentLog.objects.create(
-        agent_name="WikiCompiler",
-        action=f"Compiled wiki article '{doc_title}' ({article_type}) for {client.name}",
-        client=client,
-        client_name=client.name,
-        status="complete",
-        output_data={"article_id": str(article.id), "article_type": article_type},
-    )
+    log.status = "complete"
+    log.action = f"Compiled wiki article '{doc_title}' ({article_type}) for {client.name}"
+    log.output_data = {"article_id": str(article.id), "article_type": article_type}
+    log.save(update_fields=["status", "action", "task_label", "output_data"])
 
     return {
         "article_id": str(article.id),
@@ -227,6 +239,15 @@ def run_from_note(note_id: str) -> dict:
 
     ai = AIProvider()
 
+    log = AgentLog.objects.create(
+        agent_name="WikiCompiler",
+        task_label=f"Wiki article: {article_type}",
+        action=f"Indexing note into {article_type} for {client.name}",
+        client=client,
+        client_name=client.name,
+        status="running",
+    )
+
     existing_article = ClientWikiArticle.objects.filter(
         client=client,
         article_type=article_type,
@@ -248,6 +269,7 @@ def run_from_note(note_id: str) -> dict:
             existing_section=existing_section,
             text=text,
         ),
+        agent_log=log,
     )
     article_body = article_result["text"].strip()
 
@@ -268,5 +290,10 @@ def run_from_note(note_id: str) -> dict:
         )
 
     _rebuild_index(client)
+
+    log.status = "complete"
+    log.action = f"Indexed note into {article_type} for {client.name}"
+    log.output_data = {"article_id": str(article.id), "article_type": article_type}
+    log.save(update_fields=["status", "action", "output_data"])
 
     return {"article_id": str(article.id), "article_type": article_type, "title": doc_title}

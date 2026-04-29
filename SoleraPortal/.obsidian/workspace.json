@@ -1,0 +1,221 @@
+{
+  "main": {
+    "id": "d7c2dae2a3d3dc7a",
+    "type": "split",
+    "children": [
+      {
+        "id": "e2ff7a37d1785429",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f2ab3a6ee425578b",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "memory/log.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "log"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "c9daf2f36c12efd6",
+    "type": "split",
+    "children": [
+      {
+        "id": "c48ef7242362c20f",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "a0f163f9bb5d3d6d",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "5c4ed475e03fc2da",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "036daffff154e562",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "58fa903b5e9e97d5",
+    "type": "split",
+    "children": [
+      {
+        "id": "d203d652cf538be0",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "6f68d594c6d26198",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "memory/state.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for state"
+            }
+          },
+          {
+            "id": "11f3a8fc27218ad1",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "memory/state.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from state"
+            }
+          },
+          {
+            "id": "ec563f825b5025f8",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "860ce56b03164826",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
+            }
+          },
+          {
+            "id": "13ebcba90bdd586d",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "memory/state.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of state"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false
+    }
+  },
+  "active": "f2ab3a6ee425578b",
+  "lastOpenFiles": [
+    "memory/state.md",
+    "memory/index.md",
+    "memory/sessions/2026-04-29-0954-session-end-9d5630a6-9441-45a0-967b-ccae449048ce.md",
+    "SETUP.md",
+    "scripts/setup.bat",
+    "memory/tasks/2026-04-29-initialize-existing-repository-memory/task.md",
+    "memory/tasks/2026-04-29-initialize-existing-repository-memory/sources.md",
+    "memory/tasks/2026-04-29-initialize-existing-repository-memory/raw-intake.md",
+    "memory/tasks/2026-04-29-initialize-existing-repository-memory/implementation.md",
+    "memory/tasks/2026-04-29-initialize-existing-repository-memory",
+    "scripts/setup.ps1",
+    "scripts/setup.ps1.tmp.34716.1777479499339",
+    "scripts/runtime/hook_state.json",
+    "memory/sessions/2026-04-29-0914-session-end-d93752db-16a1-43c8-bf35-b6ea6994b017.md",
+    "hooks/__pycache__/common.cpython-313.pyc",
+    "memory/tasks/2026-04-29-fix-memory-hooks/raw-intake.md",
+    "memory/tasks/2026-04-29-fix-memory-hooks/task.md",
+    "memory/tasks/2026-04-29-fix-memory-hooks",
+    "memory/tasks/2026-04-22-phase2-improvements/task.md",
+    "memory/tasks/2026-04-22-phase2-improvements",
+    "memory/tasks/2026-04-19-phase1-advisor-portal/task.md",
+    "memory/tasks/2026-04-19-phase1-advisor-portal",
+    "memory/decisions/operational-memory-model.md",
+    "memory/decisions/hooks-capture-policy.md",
+    "memory/artifacts/baseline-repo-review.md",
+    "memory/log.md",
+    "memory/sessions/index.md",
+    "memory/tasks/2026-04-20-initialize-existing-repository-memory/task.md",
+    "memory/tasks/2026-04-20-initialize-existing-repository-memory/sources.md",
+    "memory/tasks/2026-04-20-initialize-existing-repository-memory/raw-intake.md",
+    "memory/tasks/2026-04-20-initialize-existing-repository-memory/implementation.md",
+    "memory/tasks/2026-04-20-initialize-existing-repository-memory"
+  ]
+}

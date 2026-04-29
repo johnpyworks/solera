@@ -36,7 +36,16 @@ def run(meeting_id: str) -> dict:
         today=str(date.today()),
     )
 
-    raw = ai.complete(system_prompt=get_prompt("service_agent_system"), user_prompt=prompt)["text"]
+    log = AgentLog.objects.create(
+        agent_name="Service Agent",
+        task_label="Wealthbox task extraction",
+        action=f"Extracting tasks from {meeting.meeting_type} notes for {client.name}",
+        client=client,
+        client_name=client.name,
+        status="running",
+    )
+
+    raw = ai.complete(system_prompt=get_prompt("service_agent_system"), user_prompt=prompt, agent_log=log)["text"]
 
     # Parse JSON from response
     import re
@@ -59,13 +68,9 @@ def run(meeting_id: str) -> dict:
         draft_content={"tasks": tasks},
     )
 
-    AgentLog.objects.create(
-        agent_name="Service Agent",
-        action=f"Extracted {len(tasks)} Wealthbox task(s) from {meeting.meeting_type} notes",
-        client=client,
-        client_name=client.name,
-        status="complete",
-        output_data={"approval_id": str(item.id), "task_count": len(tasks)},
-    )
+    log.status = "complete"
+    log.action = f"Extracted {len(tasks)} Wealthbox task(s) from {meeting.meeting_type} notes"
+    log.output_data = {"approval_id": str(item.id), "task_count": len(tasks)}
+    log.save(update_fields=["status", "action", "output_data"])
 
     return {"tasks": tasks, "approval_id": str(item.id)}

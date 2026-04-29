@@ -186,12 +186,17 @@ SEED_ADMIN_PASSWORD=choose-a-strong-password
 Set the Postgres password as a shell variable (used by docker-compose.prod.yml):
 
 ```bash
-# Must match DATABASE_URL password above
+# Must match DATABASE_URL password above — both must be identical
 export POSTGRES_PASSWORD=your-db-password
 
 # To persist across sessions, add to /etc/environment:
 echo "POSTGRES_PASSWORD=your-db-password" | sudo tee -a /etc/environment
 ```
+
+> **How Postgres login works in this setup:**  
+> You do not create the database or user manually. On first boot, the official `postgres:16-alpine` Docker image reads the `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` environment variables from `docker-compose.prod.yml` and automatically creates the database (`solera_prod`) and superuser (`postgres`) with those credentials.  
+> Django connects using the `DATABASE_URL` in `.env.production` — the password there must be the exact same value as `POSTGRES_PASSWORD`. If they differ, Django will get an authentication error on startup and the container will exit.  
+> The postgres port is **not exposed to the host** in production — it is only reachable from other containers on the internal Docker network.
 
 ---
 
