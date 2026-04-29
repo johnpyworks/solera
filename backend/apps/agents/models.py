@@ -9,6 +9,8 @@ class AgentLog(models.Model):
         ("Scheduler", "Scheduler"),
         ("Service Agent", "Service Agent"),
         ("Chat", "Chat"),
+        ("MeetingPrepAgent", "Meeting Prep Agent"),
+        ("WikiCompiler", "Wiki Compiler"),
     ]
     STATUS_CHOICES = [
         ("running", "Running"),

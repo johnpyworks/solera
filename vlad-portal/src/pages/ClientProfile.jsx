@@ -18,9 +18,12 @@ import {
   Check,
   Sparkles,
   BookOpen,
+  Download,
+  Send,
 } from "lucide-react";
 import MDEditor from "@uiw/react-md-editor";
 import { useApp } from "../context/AppContext";
+import { useAuth } from "../context/AuthContext";
 import { apiFetch, apiUpload } from "../api/client";
 import { ApprovalCard } from "./ApprovalQueue";
 
@@ -959,7 +962,7 @@ const MEETING_TYPES_PREP = [
   "Solera Heartbeat", "30-Day Check-In", "Annual Review", "Other",
 ];
 
-function MeetingPrepPanel({ clientId, clientName, onClose }) {
+function MeetingPrepPanel({ clientId, clientName, userEmail, onClose }) {
   const [meetingType, setMeetingType] = useState("");
   const [focus, setFocus] = useState("");
   const [status, setStatus] = useState("idle"); // idle | loading | done | error
@@ -967,9 +970,20 @@ function MeetingPrepPanel({ clientId, clientName, onClose }) {
   const [articlesUsed, setArticlesUsed] = useState([]);
   const [error, setError] = useState("");
 
+  // Email state
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [emailTo, setEmailTo] = useState(userEmail || "");
+  const [extraRecipient, setExtraRecipient] = useState("");
+  const [emailStatus, setEmailStatus] = useState("idle"); // idle | sending | sent | error
+  const [emailError, setEmailError] = useState("");
+
+  const briefRef = useRef(null);
+
   async function handleGenerate() {
     setStatus("loading");
     setError("");
+    setShowEmailForm(false);
+    setEmailStatus("idle");
     try {
       const result = await apiFetch(`/clients/${clientId}/prep/`, {
         method: "POST",
@@ -981,6 +995,58 @@ function MeetingPrepPanel({ clientId, clientName, onClose }) {
     } catch (err) {
       setError(err.message || "Failed to generate prep brief.");
       setStatus("error");
+    }
+  }
+
+  function handleDownloadPdf() {
+    const contentHtml = briefRef.current?.innerHTML || `<pre style="white-space:pre-wrap">${brief}</pre>`;
+    const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const win = window.open("", "_blank");
+    win.document.write(`<!DOCTYPE html>
+<html>
+<head>
+<title>Meeting Prep — ${clientName}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 820px; margin: 40px auto; color: #1a1a1a; line-height: 1.7; font-size: 14px; }
+  h1 { font-size: 22px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-top: 24px; }
+  h2 { font-size: 17px; color: #374151; margin-top: 24px; }
+  h3 { font-size: 15px; color: #6b7280; margin-top: 16px; }
+  hr { border: none; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+  code { background: #f3f4f6; padding: 2px 6px; border-radius: 3px; font-size: 13px; }
+  pre { background: #f3f4f6; padding: 12px; border-radius: 6px; overflow-x: auto; }
+  ul, ol { padding-left: 20px; }
+  li { margin: 4px 0; }
+  .meta { color: #6b7280; font-size: 12px; margin-bottom: 28px; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; }
+  @media print { body { margin: 20px; } }
+</style>
+</head>
+<body>
+<div class="meta">
+  <strong>Meeting Prep Brief</strong> &nbsp;&middot;&nbsp; ${clientName}${meetingType ? " &nbsp;&middot;&nbsp; " + meetingType : ""} &nbsp;&middot;&nbsp; ${date}
+</div>
+${contentHtml}
+</body>
+</html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 400);
+  }
+
+  async function handleSendEmail() {
+    const recipients = [emailTo.trim(), extraRecipient.trim()]
+      .filter(r => r && r.includes("@"));
+    if (!recipients.length) return;
+    setEmailStatus("sending");
+    setEmailError("");
+    try {
+      await apiFetch(`/clients/${clientId}/prep/email/`, {
+        method: "POST",
+        body: JSON.stringify({ brief, recipients, client_name: clientName, meeting_type: meetingType }),
+      });
+      setEmailStatus("sent");
+    } catch (err) {
+      setEmailStatus("error");
+      setEmailError(err.message || "Failed to send email.");
     }
   }
 
@@ -1041,16 +1107,66 @@ function MeetingPrepPanel({ clientId, clientName, onClose }) {
                 ))}
               </div>
             )}
-            <div className="prep-brief-body" data-color-mode="dark">
+
+            <div className="prep-brief-body" data-color-mode="dark" ref={briefRef}>
               <MDEditor.Markdown source={brief} />
             </div>
-            <button
-              className="btn btn-ghost"
-              style={{ marginTop: 16 }}
-              onClick={() => setStatus("idle")}
-            >
-              Generate New Brief
-            </button>
+
+            <div className="prep-result-actions">
+              <button className="btn btn-ghost btn-sm" onClick={handleDownloadPdf}>
+                <Download size={14} /> Save as PDF
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => { setShowEmailForm(v => !v); setEmailStatus("idle"); }}
+              >
+                <Mail size={14} /> Email Brief
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setStatus("idle")}>
+                Generate New Brief
+              </button>
+            </div>
+
+            {showEmailForm && (
+              <div className="prep-email-form">
+                <div className="form-row">
+                  <label>Send to</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    value={emailTo}
+                    onChange={e => setEmailTo(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="form-row">
+                  <label>Add another recipient (optional)</label>
+                  <input
+                    className="form-input"
+                    type="email"
+                    value={extraRecipient}
+                    onChange={e => setExtraRecipient(e.target.value)}
+                    placeholder="colleague@example.com"
+                  />
+                </div>
+                <div className="prep-email-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowEmailForm(false)}>Cancel</button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSendEmail}
+                    disabled={!emailTo.trim() || emailStatus === "sending"}
+                  >
+                    {emailStatus === "sending" ? <><Clock size={13} /> Sending…</> : <><Send size={14} /> Send</>}
+                  </button>
+                </div>
+                {emailStatus === "sent" && (
+                  <div className="prep-email-sent">
+                    <CheckCircle size={13} /> Sent to {[emailTo, extraRecipient].filter(r => r && r.includes("@")).join(", ")}
+                  </div>
+                )}
+                {emailStatus === "error" && <div className="form-error">{emailError}</div>}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1064,6 +1180,7 @@ export default function ClientProfile({ onOpenChat }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const { clientFiles, getSubmissionsForClient } = useApp();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("Overview");
   const [showQModal, setShowQModal] = useState(false);
   const [showPrepPanel, setShowPrepPanel] = useState(false);
@@ -1362,6 +1479,7 @@ export default function ClientProfile({ onOpenChat }) {
         <MeetingPrepPanel
           clientId={id}
           clientName={client.full_name}
+          userEmail={user?.email || ""}
           onClose={() => setShowPrepPanel(false)}
         />
       )}

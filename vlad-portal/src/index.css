@@ -113,6 +113,39 @@ body {
 .sidebar-footer {
   padding: 12px;
   border-top: 1px solid var(--border);
+  position: relative;
+}
+
+.user-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 12px;
+  right: 12px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  z-index: 100;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  color: var(--text-h);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.user-menu-item:hover {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--red);
 }
 
 .advisor-chip {
@@ -3497,6 +3530,12 @@ select.form-input { cursor: pointer; }
   white-space: nowrap;
 }
 
+.usage-purpose {
+  color: var(--text);
+  font-size: 12px;
+  max-width: 180px;
+}
+
 /* Loading / error / empty states */
 .usage-loading {
   color: var(--text-sm);
@@ -3943,4 +3982,38 @@ select.form-input { cursor: pointer; }
 .prep-brief-body .wmde-markdown p {
   color: var(--text);
   margin: 4px 0;
+}
+
+/* ── Prep Result Actions ─────────────────────────────────────── */
+.prep-result-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+/* ── Prep Email Form ─────────────────────────────────────────── */
+.prep-email-form {
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prep-email-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.prep-email-sent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 13px;
 }

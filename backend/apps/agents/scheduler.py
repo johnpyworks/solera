@@ -59,8 +59,21 @@ def check_and_queue_reminders():
 
         is_russian = "ru" in language_tag.lower()
 
+        log = AgentLog.objects.create(
+            agent_name="Scheduler",
+            task_label="48hr meeting reminder",
+            action=f"Generating reminder for {client.name} — {meeting.meeting_type}",
+            client=client,
+            client_name=client.name,
+            status="running",
+        )
+
         try:
-            result = AIProvider().complete(system_prompt=get_prompt("scheduler_system"), user_prompt=prompt)
+            result = AIProvider().complete(
+                system_prompt=get_prompt("scheduler_system"),
+                user_prompt=prompt,
+                agent_log=log,
+            )
             body = result["text"]
         except Exception as e:
             body = f"[Draft unavailable: {e}]"
@@ -90,14 +103,10 @@ def check_and_queue_reminders():
             status="queued",
         )
 
-        AgentLog.objects.create(
-            agent_name="Scheduler",
-            action=f"Generated 48hr reminder for {client.name} — {meeting.meeting_type}",
-            client=client,
-            client_name=client.name,
-            status="complete",
-            output_data={"approval_id": str(approval.id), "reminder_id": str(reminder.id)},
-        )
+        log.status = "complete"
+        log.action = f"Generated 48hr reminder for {client.name} — {meeting.meeting_type}"
+        log.output_data = {"approval_id": str(approval.id), "reminder_id": str(reminder.id)}
+        log.save(update_fields=["status", "action", "output_data"])
 
         created.append(str(approval.id))
 

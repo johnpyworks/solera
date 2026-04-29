@@ -99,6 +99,7 @@ class UsageSummaryView(APIView):
             {
                 "id": obj.id,
                 "agent_name": obj.agent_log.agent_name if obj.agent_log else "Unknown",
+                "task_label": obj.agent_log.task_label if obj.agent_log else "",
                 "model": obj.model,
                 "input_tokens": obj.input_tokens,
                 "output_tokens": obj.output_tokens,

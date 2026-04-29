@@ -47,17 +47,29 @@ def run(client_id: str, meeting_type: str = "", advisor_focus: str = "") -> dict
 
     ai = AIProvider()
 
-    # 3. AI selects which articles to load
-    selection_prompt = get_prompt("meeting_prep_article_selector_user").format(
+    # Create log before AI calls so costs can be linked
+    log = AgentLog.objects.create(
+        agent_name="MeetingPrepAgent",
+        task_label="Meeting prep brief",
+        action=f"Generating prep brief for {client.name} ({meeting_type or 'general'})",
+        client=client,
         client_name=client.name,
-        meeting_type=meeting_type or "general",
-        advisor_focus=advisor_focus or "full prep",
-        wiki_index=wiki_index,
+        status="running",
+    )
+
+    # 3. AI selects which articles to load
+    selection_prompt = (
+        get_prompt("meeting_prep_article_selector_user")
+        .replace("{client_name}", client.name)
+        .replace("{meeting_type}", meeting_type or "general")
+        .replace("{advisor_focus}", advisor_focus or "full prep")
+        .replace("{wiki_index}", wiki_index)
     )
 
     selection_result = ai.complete(
         system_prompt=get_prompt("meeting_prep_article_selector_system"),
         user_prompt=selection_prompt,
+        agent_log=log,
     )
 
     import json, re
@@ -95,25 +107,23 @@ def run(client_id: str, meeting_type: str = "", advisor_focus: str = "") -> dict
 
     brief_result = ai.complete(
         system_prompt=get_prompt("meeting_prep_brief_system"),
-        user_prompt=get_prompt("meeting_prep_brief_user").format(
-            client_name=client.name,
-            meeting_type=meeting_type or "meeting",
-            advisor_focus_section=advisor_focus_section,
-            open_tasks=tasks_str,
-            articles=articles_str[:12000],
+        user_prompt=(
+            get_prompt("meeting_prep_brief_user")
+            .replace("{client_name}", client.name)
+            .replace("{meeting_type}", meeting_type or "meeting")
+            .replace("{advisor_focus_section}", advisor_focus_section)
+            .replace("{open_tasks}", tasks_str)
+            .replace("{articles}", articles_str[:12000])
         ),
+        agent_log=log,
     )
 
     brief = brief_result["text"].strip()
 
-    AgentLog.objects.create(
-        agent_name="MeetingPrepAgent",
-        action=f"Generated prep brief for {client.name} ({meeting_type or 'general'})",
-        client=client,
-        client_name=client.name,
-        status="complete",
-        output_data={"articles_used": articles_used, "article_count": len(articles_used)},
-    )
+    log.status = "complete"
+    log.action = f"Generated prep brief for {client.name} ({meeting_type or 'general'})"
+    log.output_data = {"articles_used": articles_used, "article_count": len(articles_used)}
+    log.save(update_fields=["status", "action", "output_data"])
 
     return {
         "brief": brief,

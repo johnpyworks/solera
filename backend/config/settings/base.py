@@ -145,6 +145,16 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 # ── MCP Connector ─────────────────────────────────────────────
 MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "http://localhost:4000")
 
+# ── Email ─────────────────────────────────────────────────────
+# Dev default: print to console. Production: set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@solerafinancial.com")
+
 # ── Seed passwords ────────────────────────────────────────────
 SEED_VLAD_PASSWORD = os.environ.get("SEED_VLAD_PASSWORD", "changeme_vlad")
 SEED_SLAVA_PASSWORD = os.environ.get("SEED_SLAVA_PASSWORD", "changeme_slava")

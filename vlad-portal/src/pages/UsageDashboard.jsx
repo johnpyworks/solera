@@ -243,6 +243,7 @@ export default function UsageDashboard() {
               <thead>
                 <tr>
                   <th>Agent</th>
+                  <th>Purpose</th>
                   <th>Model</th>
                   <th>In Tokens</th>
                   <th>Out Tokens</th>
@@ -254,6 +255,7 @@ export default function UsageDashboard() {
                 {recentSessions.map((s) => (
                   <tr key={s.id}>
                     <td>{s.agent_name || "—"}</td>
+                    <td className="usage-purpose">{s.task_label || "—"}</td>
                     <td>
                       <span className="usage-model-pill">
                         {s.model || "—"}

@@ -1,7 +1,11 @@
+import logging
+
 from rest_framework import generics, permissions, status, filters as drf_filters
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.pagination import PageNumberPagination
+
+logger = logging.getLogger(__name__)
 
 
 class ClientPagePagination(PageNumberPagination):
@@ -221,13 +225,63 @@ class ClientMeetingPrepView(APIView):
         focus = request.data.get("focus", "")
 
         from apps.agents.meeting_prep import run
-        result = run(
-            client_id=str(pk),
-            meeting_type=meeting_type,
-            advisor_focus=focus,
-        )
+        try:
+            result = run(
+                client_id=str(pk),
+                meeting_type=meeting_type,
+                advisor_focus=focus,
+            )
+        except Exception as exc:
+            logger.exception("Meeting prep failed for client %s", pk)
+            return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         if "error" in result:
             return Response({"detail": result["error"]}, status=status.HTTP_404_NOT_FOUND)
 
         return Response(result)
+
+
+class ClientPrepEmailView(APIView):
+    """POST /api/v1/clients/{id}/prep/email/
+    Body: { brief, recipients (list), client_name, meeting_type }
+    Sends the prep brief to the given recipients via Django email."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        qs = get_client_queryset(request.user)
+        generics.get_object_or_404(qs, pk=pk)
+
+        brief = request.data.get("brief", "").strip()
+        recipients = request.data.get("recipients", [])
+        client_name = request.data.get("client_name", "")
+        meeting_type = request.data.get("meeting_type", "")
+
+        if not brief:
+            return Response({"detail": "brief is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if not recipients or not any("@" in r for r in recipients):
+            return Response({"detail": "at least one valid recipient email is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        subject = f"Meeting Prep Brief — {client_name}"
+        if meeting_type:
+            subject += f" ({meeting_type})"
+
+        html_body = f"""<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:820px;margin:40px auto;color:#1a1a1a;line-height:1.7;font-size:14px">
+<p style="color:#6b7280;font-size:12px">Meeting Prep Brief &nbsp;&middot;&nbsp; {client_name}{(' &nbsp;&middot;&nbsp; ' + meeting_type) if meeting_type else ''}</p>
+<pre style="white-space:pre-wrap;font-family:inherit">{brief}</pre>
+</body></html>"""
+
+        from django.core.mail import send_mail
+        try:
+            send_mail(
+                subject=subject,
+                message=brief,
+                from_email=None,
+                recipient_list=recipients,
+                html_message=html_body,
+                fail_silently=False,
+            )
+        except Exception as exc:
+            logger.exception("Failed to send prep brief email for client %s", pk)
+            return Response({"detail": str(exc)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({"sent_to": recipients})

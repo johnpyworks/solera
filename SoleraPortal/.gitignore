@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+scripts/runtime/*.json
+scripts/runtime/*.jsonl
+hooks/__pycache__/

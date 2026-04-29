@@ -60,6 +60,16 @@ def run(meeting_id: str) -> dict:
 
     created = []
 
+    # Create log before any AI calls so costs can be linked to it
+    log = AgentLog.objects.create(
+        agent_name="Scribe",
+        task_label="Meeting notes → approval drafts",
+        action=f"Processing {meeting.meeting_type} transcript for {client.name}",
+        client=client,
+        client_name=client.name,
+        status="running",
+    )
+
     # ── Client follow-up email (summary + both to-do lists) ──────────────────
     if settings.toggle_email_followup:
         system = get_prompt("scribe_system") + memory_context
@@ -75,7 +85,7 @@ def run(meeting_id: str) -> dict:
             client_context=client_context,
         )
 
-        body = ai.complete(system_prompt=system, user_prompt=followup_prompt)["text"]
+        body = ai.complete(system_prompt=system, user_prompt=followup_prompt, agent_log=log)["text"]
 
         draft = {
             "to": client.email,
@@ -103,6 +113,7 @@ def run(meeting_id: str) -> dict:
             notes, client.name, client_email,
             advisor_name, advisor_email, today_str,
         ),
+        agent_log=log,
     )
     cal_text = _strip_code_fence(calendar_result["text"].strip())
     try:
@@ -129,6 +140,7 @@ def run(meeting_id: str) -> dict:
     memory_result = ai.complete(
         get_prompt("memory_extraction_system"),
         memory_extraction_user_prompt(notes, client.name, existing_memories),
+        agent_log=log,
     )
     mem_text = _strip_code_fence(memory_result["text"].strip())
     try:
@@ -152,13 +164,9 @@ def run(meeting_id: str) -> dict:
     meeting.processed = True
     meeting.save()
 
-    AgentLog.objects.create(
-        agent_name="Scribe",
-        action=f"Generated {len(created)} item(s) from {meeting.meeting_type} meeting notes",
-        client=client,
-        client_name=client.name,
-        status="complete",
-        output_data={"approval_ids": created},
-    )
+    log.status = "complete"
+    log.action = f"Generated {len(created)} item(s) from {meeting.meeting_type} meeting notes"
+    log.output_data = {"approval_ids": created}
+    log.save(update_fields=["status", "action", "output_data"])
 
     return {"created": created, "meeting_id": meeting_id}
