@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { NavLink } from "react-router-dom";
 import {
   BarChart2,
@@ -9,6 +9,7 @@ import {
   Database,
   LayoutDashboard,
   ListTodo,
+  LogOut,
   Settings,
   TrendingUp,
   Users,
@@ -36,8 +37,20 @@ function asList(data) {
 }
 
 export default function Sidebar() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [pendingCount, setPendingCount] = useState(0);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
+    }
+    if (showUserMenu) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showUserMenu]);
 
   useEffect(() => {
     async function loadPendingCount() {
@@ -91,8 +104,21 @@ export default function Sidebar() {
           </>
         )}
       </nav>
-      <div className="sidebar-footer">
-        <div className="advisor-chip">
+      <div className="sidebar-footer" ref={menuRef}>
+        {showUserMenu && (
+          <div className="user-menu">
+            <button className="user-menu-item" onClick={() => { logout(); setShowUserMenu(false); }}>
+              <LogOut size={14} />
+              <span>Log out</span>
+            </button>
+          </div>
+        )}
+        <div
+          className="advisor-chip"
+          onClick={() => setShowUserMenu(v => !v)}
+          style={{ cursor: "pointer" }}
+          title="Account options"
+        >
           <div className="avatar">{(user?.first_name || user?.username || "V").slice(0, 1).toUpperCase()}</div>
           <div>
             <div className="advisor-name">{user?.full_name || user?.username || "Advisor"}</div>
