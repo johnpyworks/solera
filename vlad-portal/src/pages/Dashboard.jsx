@@ -9,6 +9,7 @@ import {
   fetchZoomRecordings,
   getDefaultProvider,
   loadPreferredProvider,
+  normalizeConnectorStatus,
   MCP_PROVIDER_LABELS,
   MCP_PROVIDER_ORDER,
 } from "../api/mcp";
@@ -52,12 +53,17 @@ export default function Dashboard() {
     async function loadDashboard() {
       setError("");
       try {
-        const [approvals, agentLogs, stats, connectorStatus] = await Promise.all([
+        const [approvals, agentLogs, stats] = await Promise.all([
           apiFetch("/approvals/?status=pending"),
           apiFetch("/agent-logs/"),
           apiFetch("/meetings/week-stats/"),
-          fetchConnectorStatus(),
         ]);
+
+        // MCP is optional — isolate so connector being down never breaks the dashboard
+        let connectorStatus = normalizeConnectorStatus({});
+        try {
+          connectorStatus = await fetchConnectorStatus();
+        } catch (_) {}
 
         setPendingApprovals(asList(approvals));
         setLogs(asList(agentLogs).slice(0, 4));

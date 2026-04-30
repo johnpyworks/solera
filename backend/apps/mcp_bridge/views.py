@@ -9,14 +9,19 @@ class ConnectorStatusView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        client = MCPClient()
         try:
-            client = MCPClient()
-            return Response({
-                "providers": client.get_connector_status(),
-                "embed_url": client.get_embed_url(),
-            })
+            providers = client.get_connector_status()
         except Exception as e:
-            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+            # Connector unreachable — return degraded 200 so the dashboard still loads
+            providers = {
+                svc: {"provider": svc, "configured": False, "connected": False, "message": str(e)}
+                for svc in MCPClient.SERVICES
+            }
+        return Response({
+            "providers": providers,
+            "embed_url": client.get_embed_url(),
+        })
 
 
 class ConnectorEmbedUrlView(APIView):
