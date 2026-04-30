@@ -73,6 +73,20 @@ class MCPClient:
             params["end"] = end
         return self._get("/api/zoom/meetings", params=params or None)
 
+    def get_credentials(self, service: str) -> dict:
+        return self._get(f"/api/credentials/{service}")
+
+    def save_credentials(self, service: str, fields: dict) -> dict:
+        return self._post(f"/api/credentials/{service}", json=fields)
+
+    def test_connection(self, service: str) -> dict:
+        endpoint = {
+            "zoom": "/api/test/zoom/s2s",
+            "outlook": "/api/test/outlook",
+            "teams": "/api/test/teams",
+        }[service]
+        return self._post(endpoint)
+
     def get_zoom_transcript(self, meeting_id: str) -> str:
         data = self._get("/api/zoom/transcript", params={"meetingId": meeting_id})
         return data.get("transcript", "")

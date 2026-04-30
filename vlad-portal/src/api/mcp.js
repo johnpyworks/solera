@@ -52,6 +52,21 @@ export async function fetchConnectorEmbedUrl() {
   return data?.embed_url || "";
 }
 
+export async function fetchCredentials(service) {
+  return apiFetch(`/mcp/connector/credentials/${service}/`);
+}
+
+export async function saveCredentials(service, fields) {
+  return apiFetch(`/mcp/connector/credentials/${service}/`, {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function testConnection(service) {
+  return apiFetch(`/mcp/connector/test/${service}/`, { method: "POST" });
+}
+
 function buildRangeQuery(start, end, days = null) {
   if (start && end) {
     return `start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;

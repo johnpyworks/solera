@@ -146,6 +146,38 @@ class TeamsMeetingsView(APIView):
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
+class ConnectorCredentialsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, service):
+        if service not in MCPClient.SERVICES:
+            return Response({"detail": "Unknown service."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return Response(MCPClient().get_credentials(service))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+    def post(self, request, service):
+        if service not in MCPClient.SERVICES:
+            return Response({"detail": "Unknown service."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return Response(MCPClient().save_credentials(service, request.data))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class ConnectorTestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, service):
+        if service not in MCPClient.SERVICES:
+            return Response({"detail": "Unknown service."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            return Response(MCPClient().test_connection(service))
+        except Exception as e:
+            return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
 class TeamsTranscriptView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

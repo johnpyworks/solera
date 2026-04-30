@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, Save } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, RefreshCw, Save } from "lucide-react";
 import {
-  fetchConnectorEmbedUrl,
   fetchConnectorStatus,
+  fetchCredentials,
+  saveCredentials,
+  testConnection,
   MCP_PROVIDER_ACCENTS,
   MCP_PROVIDER_LABELS,
   MCP_PROVIDER_ORDER,
@@ -28,6 +30,26 @@ const TOGGLE_LABELS = {
   weekly_summary: { label: "Weekly Summary (auto-generate)", locked: false, description: "Auto-generated every Monday at 8am" },
 };
 
+const PROVIDER_FIELDS = {
+  outlook: [
+    { key: "MS_CLIENT_ID", label: "Application (Client) ID" },
+    { key: "MS_CLIENT_SECRET", label: "Client Secret Value" },
+    { key: "MS_TENANT_ID", label: "Directory (Tenant) ID" },
+  ],
+  teams: [
+    { key: "TEAMS_CLIENT_ID", label: "Application (Client) ID" },
+    { key: "TEAMS_CLIENT_SECRET", label: "Client Secret Value" },
+    { key: "TEAMS_TENANT_ID", label: "Directory (Tenant) ID" },
+  ],
+  zoom: [
+    { key: "ZOOM_ACCOUNT_ID", label: "Account ID" },
+    { key: "ZOOM_API_KEY", label: "Client ID" },
+    { key: "ZOOM_API_SECRET", label: "Client Secret" },
+  ],
+};
+
+const ALL_PROVIDERS = ["outlook", "teams", "zoom"];
+
 function Toggle({ id, checked, locked, onChange }) {
   return (
     <button
@@ -48,10 +70,7 @@ function IntegrationCard({ provider, status }) {
       <div className="integration-card-top">
         <div>
           <div className="integration-label">
-            <span
-              className="integration-dot"
-              style={{ background: MCP_PROVIDER_ACCENTS[provider] }}
-            />
+            <span className="integration-dot" style={{ background: MCP_PROVIDER_ACCENTS[provider] }} />
             {MCP_PROVIDER_LABELS[provider]}
           </div>
           <div className="integration-state">
@@ -63,8 +82,126 @@ function IntegrationCard({ provider, status }) {
         </span>
       </div>
       <p className="integration-message">
-        {status.message || (status.connected ? "Ready for portal use." : "Open the connector below to complete setup.")}
+        {status.message || (status.connected ? "Ready for portal use." : "Enter credentials below to complete setup.")}
       </p>
+    </div>
+  );
+}
+
+function ProviderPanel({ provider, status, onStatusRefresh }) {
+  const fields = PROVIDER_FIELDS[provider];
+  const [open, setOpen] = useState(!status?.connected);
+  const [values, setValues] = useState(() => Object.fromEntries(fields.map((f) => [f.key, ""])));
+  const [shown, setShown] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  const [testMsg, setTestMsg] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await fetchCredentials(provider);
+        if (data?.credentials) {
+          setValues((prev) => {
+            const next = { ...prev };
+            for (const f of fields) {
+              if (data.credentials[f.key]) next[f.key] = data.credentials[f.key];
+            }
+            return next;
+          });
+        }
+      } catch (_) {}
+    }
+    load();
+  }, [provider]);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveMsg(null);
+    setTestMsg(null);
+    try {
+      await saveCredentials(provider, values);
+      setSaveMsg({ ok: true, text: "Credentials saved." });
+      onStatusRefresh();
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || "Save failed." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const result = await testConnection(provider);
+      setTestMsg({ ok: result.ok, text: result.message || (result.ok ? "Connection successful." : "Connection failed.") });
+      if (result.ok) onStatusRefresh();
+    } catch (e) {
+      setTestMsg({ ok: false, text: e.message || "Test failed." });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  const tone = status?.connected ? "connected" : status?.configured ? "configured" : "disconnected";
+
+  return (
+    <div className="cred-panel">
+      <button className="cred-panel-header" onClick={() => setOpen((v) => !v)}>
+        <div className="cred-panel-title">
+          <span className="integration-dot" style={{ background: MCP_PROVIDER_ACCENTS[provider] }} />
+          <strong>{MCP_PROVIDER_LABELS[provider]}</strong>
+          <span className={`integration-pill ${tone}`} style={{ marginLeft: 8 }}>
+            {status?.connected ? "Live" : status?.configured ? "Needs auth" : "Off"}
+          </span>
+        </div>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {open && (
+        <div className="cred-panel-body">
+          {fields.map((f) => (
+            <div key={f.key} className="cred-field">
+              <label className="cred-field-label">{f.label}</label>
+              <div className="cred-field-input-wrap">
+                <input
+                  type={shown[f.key] ? "text" : "password"}
+                  value={values[f.key]}
+                  placeholder={`Enter ${f.label}`}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="cred-input"
+                />
+                <button
+                  className="cred-eye"
+                  onClick={() => setShown((prev) => ({ ...prev, [f.key]: !prev[f.key] }))}
+                  title={shown[f.key] ? "Hide" : "Show"}
+                  type="button"
+                >
+                  {shown[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <div className="cred-actions">
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button className="btn btn-ghost" onClick={handleTest} disabled={testing}>
+              {testing ? "Testing…" : "Test Connection"}
+            </button>
+          </div>
+
+          {saveMsg && (
+            <div className={`cred-result ${saveMsg.ok ? "ok" : "err"}`}>{saveMsg.text}</div>
+          )}
+          {testMsg && (
+            <div className={`cred-result ${testMsg.ok ? "ok" : "err"}`}>{testMsg.text}</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -81,22 +218,15 @@ export default function SettingsPage() {
   });
   const [saved, setSaved] = useState(false);
   const [providers, setProviders] = useState({});
-  const [embedUrl, setEmbedUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState("");
-  const [embedError, setEmbedError] = useState(false);
 
   async function loadIntegrationState() {
     setLoading(true);
     setStatusError("");
     try {
-      const [statusData, embed] = await Promise.all([
-        fetchConnectorStatus(),
-        fetchConnectorEmbedUrl(),
-      ]);
+      const statusData = await fetchConnectorStatus();
       setProviders(statusData.providers);
-      setEmbedUrl(embed || statusData.embedUrl || "");
-      setEmbedError(false);
     } catch (error) {
       setStatusError(error.message);
     } finally {
@@ -137,7 +267,7 @@ export default function SettingsPage() {
         <div className="section-header-row">
           <div>
             <h2>Integrations</h2>
-            <p className="section-desc">Portal MCP status is live. Detailed connection setup runs inside the embedded connector dashboard.</p>
+            <p className="section-desc">Live connector status. Enter credentials for each provider below.</p>
           </div>
           <button className="btn btn-ghost" onClick={loadIntegrationState}>
             <RefreshCw size={15} /> Refresh Status
@@ -145,9 +275,7 @@ export default function SettingsPage() {
         </div>
 
         {statusError ? (
-          <div className="settings-error">
-            {statusError}
-          </div>
+          <div className="settings-error">{statusError}</div>
         ) : loading ? (
           <div className="settings-muted">Loading connector status...</div>
         ) : (
@@ -162,35 +290,16 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="integration-embed-header">
-          <div>
-            <h3>Connector Dashboard</h3>
-            <p className="section-desc">Use this embedded dashboard to connect Outlook, Teams, and Zoom credentials.</p>
-          </div>
-          {embedUrl && (
-            <a className="btn btn-ghost" href={embedUrl} target="_blank" rel="noreferrer">
-              <ExternalLink size={15} /> Open in New Tab
-            </a>
-          )}
-        </div>
-
-        {embedUrl ? (
-          <>
-            {embedError && (
-              <div className="settings-error">
-                The embedded dashboard could not load inside the portal. Use "Open in New Tab" instead.
-              </div>
-            )}
-            <iframe
-              title="MCP Connector Dashboard"
-              className="integration-iframe"
-              src={embedUrl}
-              onError={() => setEmbedError(true)}
+        <div className="cred-panels">
+          {ALL_PROVIDERS.map((provider) => (
+            <ProviderPanel
+              key={provider}
+              provider={provider}
+              status={providers[provider] || { configured: false, connected: false }}
+              onStatusRefresh={loadIntegrationState}
             />
-          </>
-        ) : (
-          <div className="settings-muted">Connector URL is not available.</div>
-        )}
+          ))}
+        </div>
       </section>
 
       <section className="settings-section">
@@ -285,7 +394,7 @@ export default function SettingsPage() {
           </div>
           <div className="info-item">
             <span className="info-label">Settings UX</span>
-            <span className="info-val">Embedded connector dashboard</span>
+            <span className="info-val active">Native credential forms</span>
           </div>
           <div className="info-item">
             <span className="info-label">Calendar Source</span>
