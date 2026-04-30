@@ -50,6 +50,60 @@ const PROVIDER_FIELDS = {
 
 const ALL_PROVIDERS = ["outlook", "teams", "zoom"];
 
+const PROVIDER_HINTS = {
+  outlook: {
+    title: "How to find your Outlook credentials",
+    steps: [
+      "Go to portal.azure.com and sign in.",
+      "Search for Microsoft Entra ID → App registrations → New registration.",
+      "Name your app, set Redirect URI to http://localhost:4000/auth/outlook/callback (Web platform).",
+      "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
+      "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
+      "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: Calendars.ReadWrite, Mail.Send, User.Read, offline_access.",
+    ],
+    warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
+    fieldHints: {
+      MS_CLIENT_ID: "Azure Portal → App registrations → Overview",
+      MS_CLIENT_SECRET: "Certificates & secrets → Value column (not the ID column)",
+      MS_TENANT_ID: "Azure Portal → Microsoft Entra ID → Overview",
+    },
+  },
+  teams: {
+    title: "How to find your Teams credentials",
+    steps: [
+      "Go to portal.azure.com and sign in.",
+      "Search for Microsoft Entra ID → App registrations → New registration.",
+      "Name your app, set Redirect URI to http://localhost:4000/auth/teams/callback (Web platform).",
+      "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
+      "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
+      "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: OnlineMeetings.Read, OnlineMeetingTranscript.Read.All, Calendars.Read, User.Read, offline_access.",
+    ],
+    warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
+    fieldHints: {
+      TEAMS_CLIENT_ID: "Azure Portal → App registrations → Overview",
+      TEAMS_CLIENT_SECRET: "Certificates & secrets → Value column (not the ID column)",
+      TEAMS_TENANT_ID: "Azure Portal → Microsoft Entra ID → Overview",
+    },
+  },
+  zoom: {
+    title: "How to find your Zoom credentials",
+    steps: [
+      "Go to marketplace.zoom.us and sign in.",
+      "Click Develop → Build App in the top navigation.",
+      "Choose Server-to-Server OAuth (requires a paid Zoom account).",
+      "On the App Credentials tab, copy the Account ID, Client ID, and Client Secret.",
+      "Under Scopes, add at minimum: user:read:admin, meeting:read:admin, recording:read:admin.",
+      "Activate the app if it is not already active.",
+    ],
+    warning: null,
+    fieldHints: {
+      ZOOM_ACCOUNT_ID: "Zoom Marketplace → App Credentials tab",
+      ZOOM_API_KEY: "Zoom Marketplace → App Credentials → Client ID",
+      ZOOM_API_SECRET: "Zoom Marketplace → App Credentials → Client Secret",
+    },
+  },
+};
+
 function Toggle({ id, checked, locked, onChange }) {
   return (
     <button
@@ -90,7 +144,9 @@ function IntegrationCard({ provider, status }) {
 
 function ProviderPanel({ provider, status, onStatusRefresh }) {
   const fields = PROVIDER_FIELDS[provider];
+  const hint = PROVIDER_HINTS[provider];
   const [open, setOpen] = useState(!status?.connected);
+  const [hintOpen, setHintOpen] = useState(false);
   const [values, setValues] = useState(() => Object.fromEntries(fields.map((f) => [f.key, ""])));
   const [shown, setShown] = useState({});
   const [saving, setSaving] = useState(false);
@@ -162,6 +218,21 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
 
       {open && (
         <div className="cred-panel-body">
+          <div className="cred-hint-toggle" onClick={() => setHintOpen((v) => !v)}>
+            <span>📋 {hint.title}</span>
+            {hintOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </div>
+          {hintOpen && (
+            <div className="cred-hint-body">
+              <ol className="cred-hint-steps">
+                {hint.steps.map((s, i) => <li key={i}>{s}</li>)}
+              </ol>
+              {hint.warning && (
+                <div className="cred-hint-warning">⚠️ {hint.warning}</div>
+              )}
+            </div>
+          )}
+
           {fields.map((f) => (
             <div key={f.key} className="cred-field">
               <label className="cred-field-label">{f.label}</label>
@@ -182,6 +253,9 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
                   {shown[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
+              {hint.fieldHints?.[f.key] && (
+                <span className="cred-field-hint">{hint.fieldHints[f.key]}</span>
+              )}
             </div>
           ))}
 
