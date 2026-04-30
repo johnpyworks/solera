@@ -8,6 +8,7 @@ from django.conf import settings
 
 
 MCP_BASE = getattr(settings, "MCP_BASE_URL", "http://localhost:4000")
+MCP_PUBLIC = getattr(settings, "MCP_PUBLIC_URL", "/mcp/")
 TIMEOUT = 30
 
 
@@ -28,7 +29,7 @@ class MCPClient:
         return resp.json()
 
     def get_embed_url(self) -> str:
-        return self.base
+        return MCP_PUBLIC
 
     def get_connector_status(self) -> dict:
         providers = {}

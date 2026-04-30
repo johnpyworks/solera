@@ -144,6 +144,10 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
 # ── MCP Connector ─────────────────────────────────────────────
 MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "http://localhost:4000")
+# Public URL the browser uses to reach the connector dashboard (iframe + link in Settings).
+# In production nginx proxies /mcp/ → mcp-connector:4000, so /mcp/ is the safe default.
+# Override to http://localhost:4000 in local dev where the connector is exposed directly.
+MCP_PUBLIC_URL = os.environ.get("MCP_PUBLIC_URL", "/mcp/")
 
 # ── Email ─────────────────────────────────────────────────────
 # Dev default: print to console. Production: set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
