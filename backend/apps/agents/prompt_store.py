@@ -28,8 +28,8 @@ Return ONLY a valid JSON object:
   "duration_min": 60,
   "meeting_type": "Discovery|LEAP Process|Implementation|Solera Heartbeat|30-Day Check-In|Other",
   "platform": "zoom",
-  "subject": "meeting subject line",
-  "body": "brief meeting invite body text (2-3 sentences)",
+  "subject": "e.g. 'LEAP Process Meeting — {client_name}'",
+  "body": "A warm, professional 1-2 sentence note for the calendar invite body. Do NOT mention any specific date or time — that is handled by the invite itself. Do NOT ask when to meet. Write something like: 'Looking forward to our [meeting_type] meeting. Please reach out if you have any questions before we connect.' Tone: advisor-voice, Solera brand. Plain text only.",
   "attendees": [
     {{"name": "{client_name}", "email": "{client_email}"}},
     {{"name": "{advisor_name}", "email": "{advisor_email}"}}

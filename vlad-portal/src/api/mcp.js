@@ -1,6 +1,6 @@
 import { apiFetch } from "./client";
 
-export const MCP_PROVIDER_ORDER = ["outlook", "zoom"];
+export const MCP_PROVIDER_ORDER = ["outlook", "teams", "zoom"];
 
 export const MCP_PROVIDER_LABELS = {
   outlook: "Outlook",

@@ -1,5 +1,6 @@
 """Scribe Agent — transcript/notes → 2 approval items: client email + calendar event."""
 import json
+import re
 from datetime import date
 
 from apps.agents.models import AgentLog
@@ -22,6 +23,49 @@ def _strip_code_fence(text: str) -> str:
         if text.startswith("json"):
             text = text[4:]
     return text
+
+
+def _markdown_to_html(text: str) -> str:
+    """Convert advisor-style markdown to Outlook-safe HTML.
+
+    Outlook uses Word's rendering engine which resets <p> margins — so we use
+    <br> for spacing instead of CSS margins, and wrap in a <div> with explicit
+    font styles that Word does respect.
+    """
+    lines = text.strip().split('\n')
+    html_lines = []
+    in_list = False
+
+    for line in lines:
+        stripped = line.strip()
+        is_bullet = stripped.startswith(('• ', '- ', '* ')) and len(stripped) > 2
+
+        if is_bullet:
+            if not in_list:
+                html_lines.append('<ul style="margin:0;padding-left:20px;">')
+                in_list = True
+            item = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', stripped[2:].strip())
+            html_lines.append(f'<li>{item}</li>')
+        else:
+            if in_list:
+                html_lines.append('</ul><br>')
+                in_list = False
+            if not stripped:
+                html_lines.append('<br>')
+            else:
+                line_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', stripped)
+                html_lines.append(line_html + '<br>')
+
+    if in_list:
+        html_lines.append('</ul>')
+
+    body = '\n'.join(html_lines)
+    return (
+        '<div style="font-family:Calibri,Arial,sans-serif;font-size:14px;'
+        'line-height:1.6;color:#000000;">'
+        + body
+        + '</div>'
+    )
 
 
 def run(meeting_id: str) -> dict:
@@ -90,7 +134,7 @@ def run(meeting_id: str) -> dict:
         draft = {
             "to": client.email,
             "subject": f"Following Up on Our {meeting.meeting_type} — {meeting_date}",
-            "body": body,
+            "body": _markdown_to_html(body),
         }
         if is_russian:
             draft["flag"] = "RUSSIAN-SPEAKING CLIENT — Review before sending."

@@ -35,6 +35,8 @@ def sync_outlook_calendar():
         scheduled_at_raw = ev.get("start") or ev.get("scheduledAt")
         if not scheduled_at_raw:
             continue
+        if isinstance(scheduled_at_raw, dict):
+            scheduled_at_raw = scheduled_at_raw.get("dateTime", "")
 
         scheduled_at = parse_datetime(str(scheduled_at_raw))
         if not scheduled_at:
@@ -52,7 +54,7 @@ def sync_outlook_calendar():
                 "meeting_type": ev.get("meetingType", "Other"),
                 "scheduled_at": scheduled_at,
                 "duration_min": ev.get("durationMin", 60),
-                "location": ev.get("location", ""),
+                "location": (ev.get("location") or {}).get("displayName", "") or ev.get("location", ""),
                 "is_past": is_past,
             }
         ) if client_id else None

@@ -142,12 +142,13 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 
-# ── MCP Connector ─────────────────────────────────────────────
-MCP_BASE_URL = os.environ.get("MCP_BASE_URL", "http://localhost:4000")
-# Public URL the browser uses to reach the connector dashboard (iframe + link in Settings).
-# In production nginx proxies /mcp/ → mcp-connector:4000, so /mcp/ is the safe default.
-# Override to http://localhost:4000 in local dev where the connector is exposed directly.
-MCP_PUBLIC_URL = os.environ.get("MCP_PUBLIC_URL", "/mcp/")
+# ── MCP / OAuth ───────────────────────────────────────────────
+# Base URL of the Django server — used to build OAuth redirect URIs.
+# Dev: http://localhost:8000  |  Prod: https://soleraportal.yanceyworks.com
+PORTAL_BASE_URL = os.environ.get("PORTAL_BASE_URL", "http://localhost:8000")
+# Base URL of the React frontend — used to redirect back after OAuth.
+# Dev: http://localhost:5173  |  Prod: https://soleraportal.yanceyworks.com
+FRONTEND_BASE_URL = os.environ.get("FRONTEND_BASE_URL", "http://localhost:5173")
 
 # ── Email ─────────────────────────────────────────────────────
 # Dev default: print to console. Production: set EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend

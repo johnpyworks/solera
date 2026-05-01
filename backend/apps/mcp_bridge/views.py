@@ -1,3 +1,7 @@
+import secrets
+
+from django.conf import settings as dj_settings
+from django.shortcuts import redirect
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,10 +22,7 @@ class ConnectorStatusView(APIView):
                 svc: {"provider": svc, "configured": False, "connected": False, "message": str(e)}
                 for svc in MCPClient.SERVICES
             }
-        return Response({
-            "providers": providers,
-            "embed_url": client.get_embed_url(),
-        })
+        return Response({"providers": providers})
 
 
 class ConnectorEmbedUrlView(APIView):
@@ -176,6 +177,83 @@ class ConnectorTestView(APIView):
             return Response(MCPClient().test_connection(service))
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class OAuthStartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, service):
+        if service not in ("outlook", "teams", "zoom"):
+            return Response({"detail": "OAuth not supported for this service."}, status=status.HTTP_400_BAD_REQUEST)
+        from .models import MCPCredential
+        from .providers.outlook import OutlookProvider, TeamsProvider
+        from .providers.zoom import ZoomProvider
+        cred, _ = MCPCredential.objects.get_or_create(provider=service, defaults={"credentials": {}})
+        state = secrets.token_urlsafe(16)
+        prefix = "MS_" if service == "outlook" else ("TEAMS_" if service == "teams" else "ZOOM_")
+        creds = dict(cred.credentials)
+        creds[f"{prefix}OAUTH_STATE"] = state
+        cred.credentials = creds
+        cred.save(update_fields=["credentials"])
+
+        base = getattr(dj_settings, "PORTAL_BASE_URL", "http://localhost:8000")
+        redirect_uri = f"{base}/api/v1/mcp/connector/oauth/callback/{service}/"
+        if service == "outlook":
+            provider = OutlookProvider()
+        elif service == "teams":
+            provider = TeamsProvider()
+        else:
+            provider = ZoomProvider()
+        return Response({"auth_url": provider.get_auth_url(redirect_uri, state)})
+
+
+class OAuthCallbackView(APIView):
+    permission_classes = []  # Browser redirect — no JWT header
+
+    def get(self, request, service):
+        frontend_base = getattr(dj_settings, "FRONTEND_BASE_URL", "http://localhost:5173")
+        settings_url = f"{frontend_base}/settings"
+
+        code = request.query_params.get("code", "")
+        state = request.query_params.get("state", "")
+        error = request.query_params.get("error", "")
+
+        if error:
+            return redirect(f"{settings_url}?mcp_error={error}")
+        if not code or not state:
+            return redirect(f"{settings_url}?mcp_error=missing_code")
+
+        try:
+            from .models import MCPCredential
+            from .providers.outlook import OutlookProvider, TeamsProvider
+            from .providers.zoom import ZoomProvider
+            cred = MCPCredential.objects.get(provider=service)
+            prefix = "MS_" if service == "outlook" else ("TEAMS_" if service == "teams" else "ZOOM_")
+            stored_state = cred.credentials.get(f"{prefix}OAUTH_STATE", "")
+            if state != stored_state:
+                return redirect(f"{settings_url}?mcp_error=state_mismatch")
+
+            base = getattr(dj_settings, "PORTAL_BASE_URL", "http://localhost:8000")
+            redirect_uri = f"{base}/api/v1/mcp/connector/oauth/callback/{service}/"
+            if service == "outlook":
+                provider = OutlookProvider()
+            elif service == "teams":
+                provider = TeamsProvider()
+            else:
+                provider = ZoomProvider()
+            provider.exchange_code(code, redirect_uri)
+
+            # Refresh from DB so we get the tokens _store_tokens() just saved,
+            # then only remove the OAUTH_STATE without clobbering the refresh token.
+            cred.refresh_from_db()
+            creds = dict(cred.credentials)
+            creds.pop(f"{prefix}OAUTH_STATE", None)
+            cred.credentials = creds
+            cred.save(update_fields=["credentials"])
+
+            return redirect(f"{settings_url}?mcp_connected={service}")
+        except Exception as e:
+            return redirect(f"{settings_url}?mcp_error={str(e)[:120]}")
 
 
 class TeamsTranscriptView(APIView):

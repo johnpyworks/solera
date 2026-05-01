@@ -41,7 +41,7 @@ function EmailPreview({ content }) {
           <AlertTriangle size={13} /> {content.flag}
         </div>
       )}
-      <pre className="preview-body">{content.body}</pre>
+      <div className="preview-body" dangerouslySetInnerHTML={{ __html: content.body }} />
     </div>
   );
 }
@@ -51,7 +51,7 @@ function QuestionnairePreview({ content }) {
     <div className="preview-email">
       <div className="preview-subject"><strong>To:</strong> {content.to}</div>
       <div className="preview-subject"><strong>Subject:</strong> {content.subject}</div>
-      <pre className="preview-body">{content.body}</pre>
+      <div className="preview-body" dangerouslySetInnerHTML={{ __html: content.body }} />
       {content.link && (
         <div style={{ marginTop: 8 }}>
           <a href={content.link} target="_blank" rel="noreferrer" className="q-link-preview">
@@ -214,7 +214,7 @@ function CalendarEventPreview({ content, onUpdate, readOnly }) {
         ) : (
           <input
             type="datetime-local"
-            step={1800}
+            step={600}
             className="cal-date-input"
             value={dateVal}
             onChange={e => handleDate(e.target.value)}

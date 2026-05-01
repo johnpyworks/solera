@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Eye, EyeOff, RefreshCw, Save } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, RefreshCw, Save, Trash2 } from "lucide-react";
+import { apiFetch } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import {
   fetchConnectorStatus,
   fetchCredentials,
@@ -42,13 +44,12 @@ const PROVIDER_FIELDS = {
     { key: "TEAMS_TENANT_ID", label: "Directory (Tenant) ID" },
   ],
   zoom: [
-    { key: "ZOOM_ACCOUNT_ID", label: "Account ID" },
     { key: "ZOOM_API_KEY", label: "Client ID" },
     { key: "ZOOM_API_SECRET", label: "Client Secret" },
   ],
 };
 
-const ALL_PROVIDERS = ["outlook", "teams", "zoom"];
+const OAUTH_PROVIDERS = ["outlook", "teams", "zoom"];
 
 const PROVIDER_HINTS = {
   outlook: {
@@ -56,10 +57,11 @@ const PROVIDER_HINTS = {
     steps: [
       "Go to portal.azure.com and sign in.",
       "Search for Microsoft Entra ID → App registrations → New registration.",
-      "Name your app, set Redirect URI to http://localhost:4000/auth/outlook/callback (Web platform).",
+      "Name your app, set Redirect URI to Web: http://localhost:8000/api/v1/mcp/connector/oauth/callback/outlook/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/outlook/ (prod).",
       "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
       "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
       "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: Calendars.ReadWrite, Mail.Send, User.Read, offline_access.",
+      "Enter the credentials below, click Save, then click Connect with Microsoft to sign in.",
     ],
     warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
     fieldHints: {
@@ -72,11 +74,12 @@ const PROVIDER_HINTS = {
     title: "How to find your Teams credentials",
     steps: [
       "Go to portal.azure.com and sign in.",
-      "Search for Microsoft Entra ID → App registrations → New registration.",
-      "Name your app, set Redirect URI to http://localhost:4000/auth/teams/callback (Web platform).",
+      "You can reuse the same Azure App registration as Outlook, or create a new one.",
+      "Add Redirect URI: http://localhost:8000/api/v1/mcp/connector/oauth/callback/teams/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/teams/ (prod).",
       "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
       "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
       "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: OnlineMeetings.Read, OnlineMeetingTranscript.Read.All, Calendars.Read, User.Read, offline_access.",
+      "Enter the credentials below, click Save, then click Connect with Microsoft to sign in.",
     ],
     warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
     fieldHints: {
@@ -90,14 +93,14 @@ const PROVIDER_HINTS = {
     steps: [
       "Go to marketplace.zoom.us and sign in.",
       "Click Develop → Build App in the top navigation.",
-      "Choose Server-to-Server OAuth (requires a paid Zoom account).",
-      "On the App Credentials tab, copy the Account ID, Client ID, and Client Secret.",
-      "Under Scopes, add at minimum: user:read:admin, meeting:read:admin, recording:read:admin.",
-      "Activate the app if it is not already active.",
+      "Choose OAuth app type.",
+      "Set Redirect URL to: http://localhost:8000/api/v1/mcp/connector/oauth/callback/zoom/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/zoom/ (prod).",
+      "On the App Credentials tab, copy the Client ID and Client Secret.",
+      "Under Scopes, add: meeting:read, recording:read, user:read.",
+      "Enter the credentials below, click Save, then click Connect with Zoom to sign in.",
     ],
     warning: null,
     fieldHints: {
-      ZOOM_ACCOUNT_ID: "Zoom Marketplace → App Credentials tab",
       ZOOM_API_KEY: "Zoom Marketplace → App Credentials → Client ID",
       ZOOM_API_SECRET: "Zoom Marketplace → App Credentials → Client Secret",
     },
@@ -201,6 +204,17 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
     }
   }
 
+  async function handleConnect() {
+    try {
+      const data = await apiFetch(`/mcp/connector/oauth/start/${provider}/`, { method: "POST" });
+      if (data.auth_url) {
+        window.open(data.auth_url, "_blank", "width=600,height=700");
+      }
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || "Could not start OAuth flow." });
+    }
+  }
+
   const tone = status?.connected ? "connected" : status?.configured ? "configured" : "disconnected";
 
   return (
@@ -238,20 +252,22 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
               <label className="cred-field-label">{f.label}</label>
               <div className="cred-field-input-wrap">
                 <input
-                  type={shown[f.key] ? "text" : "password"}
+                  type={f.type === "text" ? "text" : shown[f.key] ? "text" : "password"}
                   value={values[f.key]}
                   placeholder={`Enter ${f.label}`}
                   onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
                   className="cred-input"
                 />
-                <button
-                  className="cred-eye"
-                  onClick={() => setShown((prev) => ({ ...prev, [f.key]: !prev[f.key] }))}
-                  title={shown[f.key] ? "Hide" : "Show"}
-                  type="button"
-                >
-                  {shown[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
+                {f.type !== "text" && (
+                  <button
+                    className="cred-eye"
+                    onClick={() => setShown((prev) => ({ ...prev, [f.key]: !prev[f.key] }))}
+                    title={shown[f.key] ? "Hide" : "Show"}
+                    type="button"
+                  >
+                    {shown[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                )}
               </div>
               {hint.fieldHints?.[f.key] && (
                 <span className="cred-field-hint">{hint.fieldHints[f.key]}</span>
@@ -266,6 +282,11 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
             <button className="btn btn-ghost" onClick={handleTest} disabled={testing}>
               {testing ? "Testing…" : "Test Connection"}
             </button>
+            {OAUTH_PROVIDERS.includes(provider) && (
+              <button className="btn btn-ghost" onClick={handleConnect}>
+                {provider === "zoom" ? "Connect with Zoom" : "Connect with Microsoft"}
+              </button>
+            )}
           </div>
 
           {saveMsg && (
@@ -281,6 +302,7 @@ function ProviderPanel({ provider, status, onStatusRefresh }) {
 }
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [toggles, setToggles] = useState(DEFAULT_TOGGLES);
   const [prefs, setPrefs] = useState({
     advisor_name: "Vlad Donets",
@@ -294,6 +316,32 @@ export default function SettingsPage() {
   const [providers, setProviders] = useState({});
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState("");
+
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
+  async function handleResetDb() {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const data = await apiFetch("/settings/reset-dev-db/", { method: "POST" });
+      setResetResult({ ok: true, deleted: data.deleted });
+      setResetConfirm(false);
+      loadIntegrationState();
+    } catch (e) {
+      setResetResult({ ok: false, text: e.message || "Reset failed." });
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const [oauthBanner, setOauthBanner] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("mcp_connected")) return { ok: true, text: `${p.get("mcp_connected")} connected successfully.` };
+    if (p.get("mcp_error")) return { ok: false, text: `OAuth error: ${p.get("mcp_error")}` };
+    return null;
+  });
 
   async function loadIntegrationState() {
     setLoading(true);
@@ -337,6 +385,13 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {oauthBanner && (
+        <div className={`cred-result ${oauthBanner.ok ? "ok" : "err"}`} style={{ marginBottom: 16 }}>
+          {oauthBanner.text}
+          <button style={{ marginLeft: 12, opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }} onClick={() => setOauthBanner(null)}>✕</button>
+        </div>
+      )}
+
       <section className="settings-section">
         <div className="section-header-row">
           <div>
@@ -365,7 +420,7 @@ export default function SettingsPage() {
         )}
 
         <div className="cred-panels">
-          {ALL_PROVIDERS.map((provider) => (
+          {MCP_PROVIDER_ORDER.map((provider) => (
             <ProviderPanel
               key={provider}
               provider={provider}
@@ -454,6 +509,42 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {user?.role === "super_admin" && (
+        <section className="settings-section settings-danger-zone">
+          <h2>Danger Zone</h2>
+          <p className="section-desc">Dev tools — only available when DEBUG=True. Not accessible in production.</p>
+
+          {!resetConfirm ? (
+            <button className="btn btn-danger" onClick={() => setResetConfirm(true)}>
+              <Trash2 size={15} /> Reset Dev Database
+            </button>
+          ) : (
+            <div className="reset-confirm-box">
+              <p>This will permanently delete all clients, meetings, approvals, chat messages, and documents. User accounts are kept. Are you sure?</p>
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <button className="btn btn-danger" onClick={handleResetDb} disabled={resetting}>
+                  {resetting ? "Resetting…" : "Yes, wipe it"}
+                </button>
+                <button className="btn btn-ghost" onClick={() => setResetConfirm(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {resetResult && (
+            <div className={`cred-result ${resetResult.ok ? "ok" : "err"}`} style={{ marginTop: 12 }}>
+              {resetResult.ok ? (
+                <>
+                  Database cleared. Deleted: {Object.entries(resetResult.deleted)
+                    .filter(([, v]) => v > 0)
+                    .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`)
+                    .join(", ") || "nothing"}
+                </>
+              ) : resetResult.text}
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="settings-section">
         <h2>System Info</h2>

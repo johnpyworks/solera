@@ -915,6 +915,13 @@ body {
 .upcoming-meta { font-size: 12px; color: var(--text); }
 
 /* ── Settings ─────────────────────────────────────────────── */
+.settings-danger-zone { border-color: var(--red)44 !important; }
+.settings-danger-zone h2 { color: var(--red); }
+.btn-danger { background: var(--red)22; border-color: var(--red)66; color: var(--red); }
+.btn-danger:hover { background: var(--red)33; }
+.reset-confirm-box { background: var(--bg-3); border: 1px solid var(--red)44; border-radius: var(--radius); padding: 14px 16px; max-width: 480px; }
+.reset-confirm-box p { font-size: 13px; color: var(--text); margin: 0; }
+
 .settings-section {
   background: var(--bg-2);
   border: 1px solid var(--border);
