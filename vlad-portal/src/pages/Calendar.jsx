@@ -9,9 +9,10 @@ import {
   getDefaultProvider,
   loadPreferredProvider,
   MCP_PROVIDER_LABELS,
-  MCP_PROVIDER_ORDER,
   persistPreferredProvider,
 } from "../api/mcp";
+
+const CALENDAR_PROVIDERS = ["outlook", "zoom"];
 import { apiFetch } from "../api/client";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -57,6 +58,12 @@ function formatDateTime(value) {
   });
 }
 
+function safeStr(v) {
+  if (!v) return "";
+  if (typeof v === "object") return v.displayName || v.emailAddress?.name || "";
+  return String(v);
+}
+
 function normalizeCalendarItems(provider, items) {
   return items.map((item) => {
     if (provider === "portal") {
@@ -78,18 +85,23 @@ function normalizeCalendarItems(provider, items) {
     }
 
     if (provider === "outlook") {
+      const startStr = item.start?.dateTime || item.start || "";
+      const endStr = item.end?.dateTime || item.end || null;
+      const locationStr = safeStr(item.location);
+      const organizerStr = item.organizer?.emailAddress?.name || safeStr(item.organizer);
+      const online = Boolean(item.onlineMeeting || item.isOnlineMeeting);
       return {
-        id: `${provider}-${item.subject || "event"}-${item.start || ""}`,
+        id: `${provider}-${item.subject || "event"}-${startStr}`,
         provider,
         title: item.subject || "Untitled",
-        start: item.start,
-        end: item.end || null,
-        location: item.location || "",
-        organizer: item.organizer || "",
-        isOnlineMeeting: Boolean(item.isOnlineMeeting),
+        start: startStr,
+        end: endStr,
+        location: locationStr,
+        organizer: organizerStr,
+        isOnlineMeeting: online,
         canOpenTranscript: false,
         transcriptId: null,
-        meta: item.isOnlineMeeting ? "Online meeting" : "Calendar event",
+        meta: online ? "Online meeting" : "Calendar event",
       };
     }
 
@@ -173,7 +185,7 @@ function ProviderSelector({ providers, selected, onSelect }) {
         Portal
         <span className="tab-count">DB</span>
       </button>
-      {MCP_PROVIDER_ORDER.map((p) => {
+      {CALENDAR_PROVIDERS.map((p) => {
         const connected = providers[p]?.connected;
         const pLabel = MCP_PROVIDER_LABELS[p];
         return (
@@ -354,9 +366,9 @@ export default function CalendarPage() {
         const status = await fetchConnectorStatus();
         setProviders(status.providers);
         const preferred = loadPreferredProvider();
-        if (preferred && preferred !== "portal") {
+        if (preferred && preferred !== "portal" && CALENDAR_PROVIDERS.includes(preferred)) {
           const nextProvider = getDefaultProvider(status.providers, preferred);
-          if (nextProvider && status.providers[nextProvider]?.connected) {
+          if (nextProvider && CALENDAR_PROVIDERS.includes(nextProvider) && status.providers[nextProvider]?.connected) {
             setProvider(nextProvider);
           }
         }

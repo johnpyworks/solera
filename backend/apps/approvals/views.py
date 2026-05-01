@@ -79,6 +79,11 @@ class ApprovalApproveView(APIView):
                 to_email = draft.get("to") or (item.client.email if item.client else "")
                 subject = draft.get("subject", "")
                 body = draft.get("body", "")
+                # Convert markdown → HTML if not already HTML (safety net for older approvals
+                # or chat-generated items that bypassed the scribe conversion)
+                if body and not body.strip().startswith('<'):
+                    from apps.agents.scribe import _markdown_to_html
+                    body = _markdown_to_html(body)
                 if to_email and subject:
                     result = MCPClient().send_outlook_email(to_email, subject, body)
                     if result.get("ok"):
@@ -135,6 +140,7 @@ class ApprovalApproveView(APIView):
         # If calendar_event → always save Meeting to DB, then try MCP invite
         elif item.item_type == "calendar_event":
             from datetime import datetime, timedelta
+            from django.utils import timezone as tz
             from apps.meetings.models import Meeting
             draft = item.draft_content
             calendar_sent = False
@@ -143,6 +149,8 @@ class ApprovalApproveView(APIView):
             if draft.get("proposed_date"):
                 try:
                     start_dt = datetime.fromisoformat(draft["proposed_date"])
+                    if tz.is_naive(start_dt):
+                        start_dt = tz.make_aware(start_dt)
                     duration = int(draft.get("duration_min", 60))
 
                     # Create Meeting DB record (skip if one already exists for this approval)
@@ -165,6 +173,7 @@ class ApprovalApproveView(APIView):
                     # Best-effort: send Outlook calendar invite via MCP
                     try:
                         from apps.mcp_bridge.client import MCPClient
+                        platform = draft.get("platform", "zoom")
                         result = MCPClient().create_meeting_event(
                             subject=draft.get("subject", "Meeting"),
                             start=start_dt.isoformat(),
@@ -172,7 +181,7 @@ class ApprovalApproveView(APIView):
                             attendees=draft.get("attendees", []),
                             location=draft.get("location", ""),
                             html_body=draft.get("body", ""),
-                            platform=draft.get("platform", "zoom"),
+                            platform=platform,
                             duration_min=duration,
                         )
                         print(f"[Approval] calendar_event MCP result: {result}")

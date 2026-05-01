@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, Save } from "lucide-react";
+import { ChevronDown, ChevronUp, Eye, EyeOff, RefreshCw, Save, Trash2 } from "lucide-react";
+import { apiFetch } from "../api/client";
+import { useAuth } from "../context/AuthContext";
 import {
-  fetchConnectorEmbedUrl,
   fetchConnectorStatus,
+  fetchCredentials,
+  saveCredentials,
+  testConnection,
   MCP_PROVIDER_ACCENTS,
   MCP_PROVIDER_LABELS,
   MCP_PROVIDER_ORDER,
@@ -28,6 +32,81 @@ const TOGGLE_LABELS = {
   weekly_summary: { label: "Weekly Summary (auto-generate)", locked: false, description: "Auto-generated every Monday at 8am" },
 };
 
+const PROVIDER_FIELDS = {
+  outlook: [
+    { key: "MS_CLIENT_ID", label: "Application (Client) ID" },
+    { key: "MS_CLIENT_SECRET", label: "Client Secret Value" },
+    { key: "MS_TENANT_ID", label: "Directory (Tenant) ID" },
+  ],
+  teams: [
+    { key: "TEAMS_CLIENT_ID", label: "Application (Client) ID" },
+    { key: "TEAMS_CLIENT_SECRET", label: "Client Secret Value" },
+    { key: "TEAMS_TENANT_ID", label: "Directory (Tenant) ID" },
+  ],
+  zoom: [
+    { key: "ZOOM_API_KEY", label: "Client ID" },
+    { key: "ZOOM_API_SECRET", label: "Client Secret" },
+  ],
+};
+
+const OAUTH_PROVIDERS = ["outlook", "teams", "zoom"];
+
+const PROVIDER_HINTS = {
+  outlook: {
+    title: "How to find your Outlook credentials",
+    steps: [
+      "Go to portal.azure.com and sign in.",
+      "Search for Microsoft Entra ID → App registrations → New registration.",
+      "Name your app, set Redirect URI to Web: http://localhost:8000/api/v1/mcp/connector/oauth/callback/outlook/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/outlook/ (prod).",
+      "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
+      "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
+      "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: Calendars.ReadWrite, Mail.Send, User.Read, offline_access.",
+      "Enter the credentials below, click Save, then click Connect with Microsoft to sign in.",
+    ],
+    warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
+    fieldHints: {
+      MS_CLIENT_ID: "Azure Portal → App registrations → Overview",
+      MS_CLIENT_SECRET: "Certificates & secrets → Value column (not the ID column)",
+      MS_TENANT_ID: "Azure Portal → Microsoft Entra ID → Overview",
+    },
+  },
+  teams: {
+    title: "How to find your Teams credentials",
+    steps: [
+      "Go to portal.azure.com and sign in.",
+      "You can reuse the same Azure App registration as Outlook, or create a new one.",
+      "Add Redirect URI: http://localhost:8000/api/v1/mcp/connector/oauth/callback/teams/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/teams/ (prod).",
+      "After creation, copy the Application (Client) ID and Directory (Tenant) ID from the Overview page.",
+      "Go to Certificates & secrets → New client secret. Copy the secret Value (not the Secret ID).",
+      "Under API permissions → Add a permission → Microsoft Graph → Delegated, add: OnlineMeetings.Read, OnlineMeetingTranscript.Read.All, Calendars.Read, User.Read, offline_access.",
+      "Enter the credentials below, click Save, then click Connect with Microsoft to sign in.",
+    ],
+    warning: "Always copy the secret Value, not the Secret ID. The wrong field causes error AADSTS7000215.",
+    fieldHints: {
+      TEAMS_CLIENT_ID: "Azure Portal → App registrations → Overview",
+      TEAMS_CLIENT_SECRET: "Certificates & secrets → Value column (not the ID column)",
+      TEAMS_TENANT_ID: "Azure Portal → Microsoft Entra ID → Overview",
+    },
+  },
+  zoom: {
+    title: "How to find your Zoom credentials",
+    steps: [
+      "Go to marketplace.zoom.us and sign in.",
+      "Click Develop → Build App in the top navigation.",
+      "Choose OAuth app type.",
+      "Set Redirect URL to: http://localhost:8000/api/v1/mcp/connector/oauth/callback/zoom/ (dev) and https://soleraportal.yanceyworks.com/api/v1/mcp/connector/oauth/callback/zoom/ (prod).",
+      "On the App Credentials tab, copy the Client ID and Client Secret.",
+      "Under Scopes, add: meeting:read, recording:read, user:read.",
+      "Enter the credentials below, click Save, then click Connect with Zoom to sign in.",
+    ],
+    warning: null,
+    fieldHints: {
+      ZOOM_API_KEY: "Zoom Marketplace → App Credentials → Client ID",
+      ZOOM_API_SECRET: "Zoom Marketplace → App Credentials → Client Secret",
+    },
+  },
+};
+
 function Toggle({ id, checked, locked, onChange }) {
   return (
     <button
@@ -48,10 +127,7 @@ function IntegrationCard({ provider, status }) {
       <div className="integration-card-top">
         <div>
           <div className="integration-label">
-            <span
-              className="integration-dot"
-              style={{ background: MCP_PROVIDER_ACCENTS[provider] }}
-            />
+            <span className="integration-dot" style={{ background: MCP_PROVIDER_ACCENTS[provider] }} />
             {MCP_PROVIDER_LABELS[provider]}
           </div>
           <div className="integration-state">
@@ -63,13 +139,170 @@ function IntegrationCard({ provider, status }) {
         </span>
       </div>
       <p className="integration-message">
-        {status.message || (status.connected ? "Ready for portal use." : "Open the connector below to complete setup.")}
+        {status.message || (status.connected ? "Ready for portal use." : "Enter credentials below to complete setup.")}
       </p>
     </div>
   );
 }
 
+function ProviderPanel({ provider, status, onStatusRefresh }) {
+  const fields = PROVIDER_FIELDS[provider];
+  const hint = PROVIDER_HINTS[provider];
+  const [open, setOpen] = useState(!status?.connected);
+  const [hintOpen, setHintOpen] = useState(false);
+  const [values, setValues] = useState(() => Object.fromEntries(fields.map((f) => [f.key, ""])));
+  const [shown, setShown] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saveMsg, setSaveMsg] = useState(null);
+  const [testMsg, setTestMsg] = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await fetchCredentials(provider);
+        if (data?.credentials) {
+          setValues((prev) => {
+            const next = { ...prev };
+            for (const f of fields) {
+              if (data.credentials[f.key]) next[f.key] = data.credentials[f.key];
+            }
+            return next;
+          });
+        }
+      } catch (_) {}
+    }
+    load();
+  }, [provider]);
+
+  async function handleSave() {
+    setSaving(true);
+    setSaveMsg(null);
+    setTestMsg(null);
+    try {
+      await saveCredentials(provider, values);
+      setSaveMsg({ ok: true, text: "Credentials saved." });
+      onStatusRefresh();
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || "Save failed." });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestMsg(null);
+    try {
+      const result = await testConnection(provider);
+      setTestMsg({ ok: result.ok, text: result.message || (result.ok ? "Connection successful." : "Connection failed.") });
+      if (result.ok) onStatusRefresh();
+    } catch (e) {
+      setTestMsg({ ok: false, text: e.message || "Test failed." });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function handleConnect() {
+    try {
+      const data = await apiFetch(`/mcp/connector/oauth/start/${provider}/`, { method: "POST" });
+      if (data.auth_url) {
+        window.open(data.auth_url, "_blank", "width=600,height=700");
+      }
+    } catch (e) {
+      setSaveMsg({ ok: false, text: e.message || "Could not start OAuth flow." });
+    }
+  }
+
+  const tone = status?.connected ? "connected" : status?.configured ? "configured" : "disconnected";
+
+  return (
+    <div className="cred-panel">
+      <button className="cred-panel-header" onClick={() => setOpen((v) => !v)}>
+        <div className="cred-panel-title">
+          <span className="integration-dot" style={{ background: MCP_PROVIDER_ACCENTS[provider] }} />
+          <strong>{MCP_PROVIDER_LABELS[provider]}</strong>
+          <span className={`integration-pill ${tone}`} style={{ marginLeft: 8 }}>
+            {status?.connected ? "Live" : status?.configured ? "Needs auth" : "Off"}
+          </span>
+        </div>
+        {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+
+      {open && (
+        <div className="cred-panel-body">
+          <div className="cred-hint-toggle" onClick={() => setHintOpen((v) => !v)}>
+            <span>📋 {hint.title}</span>
+            {hintOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </div>
+          {hintOpen && (
+            <div className="cred-hint-body">
+              <ol className="cred-hint-steps">
+                {hint.steps.map((s, i) => <li key={i}>{s}</li>)}
+              </ol>
+              {hint.warning && (
+                <div className="cred-hint-warning">⚠️ {hint.warning}</div>
+              )}
+            </div>
+          )}
+
+          {fields.map((f) => (
+            <div key={f.key} className="cred-field">
+              <label className="cred-field-label">{f.label}</label>
+              <div className="cred-field-input-wrap">
+                <input
+                  type={f.type === "text" ? "text" : shown[f.key] ? "text" : "password"}
+                  value={values[f.key]}
+                  placeholder={`Enter ${f.label}`}
+                  onChange={(e) => setValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  className="cred-input"
+                />
+                {f.type !== "text" && (
+                  <button
+                    className="cred-eye"
+                    onClick={() => setShown((prev) => ({ ...prev, [f.key]: !prev[f.key] }))}
+                    title={shown[f.key] ? "Hide" : "Show"}
+                    type="button"
+                  >
+                    {shown[f.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                )}
+              </div>
+              {hint.fieldHints?.[f.key] && (
+                <span className="cred-field-hint">{hint.fieldHints[f.key]}</span>
+              )}
+            </div>
+          ))}
+
+          <div className="cred-actions">
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button className="btn btn-ghost" onClick={handleTest} disabled={testing}>
+              {testing ? "Testing…" : "Test Connection"}
+            </button>
+            {OAUTH_PROVIDERS.includes(provider) && (
+              <button className="btn btn-ghost" onClick={handleConnect}>
+                {provider === "zoom" ? "Connect with Zoom" : "Connect with Microsoft"}
+              </button>
+            )}
+          </div>
+
+          {saveMsg && (
+            <div className={`cred-result ${saveMsg.ok ? "ok" : "err"}`}>{saveMsg.text}</div>
+          )}
+          {testMsg && (
+            <div className={`cred-result ${testMsg.ok ? "ok" : "err"}`}>{testMsg.text}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [toggles, setToggles] = useState(DEFAULT_TOGGLES);
   const [prefs, setPrefs] = useState({
     advisor_name: "Vlad Donets",
@@ -81,22 +314,41 @@ export default function SettingsPage() {
   });
   const [saved, setSaved] = useState(false);
   const [providers, setProviders] = useState({});
-  const [embedUrl, setEmbedUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [statusError, setStatusError] = useState("");
-  const [embedError, setEmbedError] = useState(false);
+
+  const [resetConfirm, setResetConfirm] = useState(false);
+  const [resetResult, setResetResult] = useState(null);
+  const [resetting, setResetting] = useState(false);
+
+  async function handleResetDb() {
+    setResetting(true);
+    setResetResult(null);
+    try {
+      const data = await apiFetch("/settings/reset-dev-db/", { method: "POST" });
+      setResetResult({ ok: true, deleted: data.deleted });
+      setResetConfirm(false);
+      loadIntegrationState();
+    } catch (e) {
+      setResetResult({ ok: false, text: e.message || "Reset failed." });
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const [oauthBanner, setOauthBanner] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get("mcp_connected")) return { ok: true, text: `${p.get("mcp_connected")} connected successfully.` };
+    if (p.get("mcp_error")) return { ok: false, text: `OAuth error: ${p.get("mcp_error")}` };
+    return null;
+  });
 
   async function loadIntegrationState() {
     setLoading(true);
     setStatusError("");
     try {
-      const [statusData, embed] = await Promise.all([
-        fetchConnectorStatus(),
-        fetchConnectorEmbedUrl(),
-      ]);
+      const statusData = await fetchConnectorStatus();
       setProviders(statusData.providers);
-      setEmbedUrl(embed || statusData.embedUrl || "");
-      setEmbedError(false);
     } catch (error) {
       setStatusError(error.message);
     } finally {
@@ -133,11 +385,18 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {oauthBanner && (
+        <div className={`cred-result ${oauthBanner.ok ? "ok" : "err"}`} style={{ marginBottom: 16 }}>
+          {oauthBanner.text}
+          <button style={{ marginLeft: 12, opacity: 0.6, cursor: "pointer", background: "none", border: "none", color: "inherit" }} onClick={() => setOauthBanner(null)}>✕</button>
+        </div>
+      )}
+
       <section className="settings-section">
         <div className="section-header-row">
           <div>
             <h2>Integrations</h2>
-            <p className="section-desc">Portal MCP status is live. Detailed connection setup runs inside the embedded connector dashboard.</p>
+            <p className="section-desc">Live connector status. Enter credentials for each provider below.</p>
           </div>
           <button className="btn btn-ghost" onClick={loadIntegrationState}>
             <RefreshCw size={15} /> Refresh Status
@@ -145,9 +404,7 @@ export default function SettingsPage() {
         </div>
 
         {statusError ? (
-          <div className="settings-error">
-            {statusError}
-          </div>
+          <div className="settings-error">{statusError}</div>
         ) : loading ? (
           <div className="settings-muted">Loading connector status...</div>
         ) : (
@@ -162,35 +419,16 @@ export default function SettingsPage() {
           </div>
         )}
 
-        <div className="integration-embed-header">
-          <div>
-            <h3>Connector Dashboard</h3>
-            <p className="section-desc">Use this embedded dashboard to connect Outlook, Teams, and Zoom credentials.</p>
-          </div>
-          {embedUrl && (
-            <a className="btn btn-ghost" href={embedUrl} target="_blank" rel="noreferrer">
-              <ExternalLink size={15} /> Open in New Tab
-            </a>
-          )}
-        </div>
-
-        {embedUrl ? (
-          <>
-            {embedError && (
-              <div className="settings-error">
-                The embedded dashboard could not load inside the portal. Use "Open in New Tab" instead.
-              </div>
-            )}
-            <iframe
-              title="MCP Connector Dashboard"
-              className="integration-iframe"
-              src={embedUrl}
-              onError={() => setEmbedError(true)}
+        <div className="cred-panels">
+          {MCP_PROVIDER_ORDER.map((provider) => (
+            <ProviderPanel
+              key={provider}
+              provider={provider}
+              status={providers[provider] || { configured: false, connected: false }}
+              onStatusRefresh={loadIntegrationState}
             />
-          </>
-        ) : (
-          <div className="settings-muted">Connector URL is not available.</div>
-        )}
+          ))}
+        </div>
       </section>
 
       <section className="settings-section">
@@ -272,6 +510,42 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {user?.role === "super_admin" && (
+        <section className="settings-section settings-danger-zone">
+          <h2>Danger Zone</h2>
+          <p className="section-desc">Dev tools — only available when DEBUG=True. Not accessible in production.</p>
+
+          {!resetConfirm ? (
+            <button className="btn btn-danger" onClick={() => setResetConfirm(true)}>
+              <Trash2 size={15} /> Reset Dev Database
+            </button>
+          ) : (
+            <div className="reset-confirm-box">
+              <p>This will permanently delete all clients, meetings, approvals, chat messages, and documents. User accounts are kept. Are you sure?</p>
+              <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+                <button className="btn btn-danger" onClick={handleResetDb} disabled={resetting}>
+                  {resetting ? "Resetting…" : "Yes, wipe it"}
+                </button>
+                <button className="btn btn-ghost" onClick={() => setResetConfirm(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {resetResult && (
+            <div className={`cred-result ${resetResult.ok ? "ok" : "err"}`} style={{ marginTop: 12 }}>
+              {resetResult.ok ? (
+                <>
+                  Database cleared. Deleted: {Object.entries(resetResult.deleted)
+                    .filter(([, v]) => v > 0)
+                    .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`)
+                    .join(", ") || "nothing"}
+                </>
+              ) : resetResult.text}
+            </div>
+          )}
+        </section>
+      )}
+
       <section className="settings-section">
         <h2>System Info</h2>
         <div className="info-grid">
@@ -285,7 +559,7 @@ export default function SettingsPage() {
           </div>
           <div className="info-item">
             <span className="info-label">Settings UX</span>
-            <span className="info-val">Embedded connector dashboard</span>
+            <span className="info-val active">Native credential forms</span>
           </div>
           <div className="info-item">
             <span className="info-label">Calendar Source</span>

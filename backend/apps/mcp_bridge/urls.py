@@ -1,12 +1,16 @@
 from django.urls import path
 
 from . import views
-from .views import OutlookCreateEventView
+from .views import OutlookCreateEventView, ConnectorCredentialsView, ConnectorTestView, OAuthStartView, OAuthCallbackView
 
 
 urlpatterns = [
     path("connector/status/", views.ConnectorStatusView.as_view(), name="mcp-connector-status"),
     path("connector/embed-url/", views.ConnectorEmbedUrlView.as_view(), name="mcp-connector-embed-url"),
+    path("connector/credentials/<str:service>/", ConnectorCredentialsView.as_view(), name="mcp-connector-credentials"),
+    path("connector/test/<str:service>/", ConnectorTestView.as_view(), name="mcp-connector-test"),
+    path("connector/oauth/start/<str:service>/", OAuthStartView.as_view(), name="mcp-oauth-start"),
+    path("connector/oauth/callback/<str:service>/", OAuthCallbackView.as_view(), name="mcp-oauth-callback"),
     path("outlook/events/", views.OutlookEventsView.as_view(), name="mcp-outlook-events"),
     path("outlook/events/create/", OutlookCreateEventView.as_view(), name="outlook-create-event"),
     path("outlook/send-email/", views.OutlookSendEmailView.as_view(), name="mcp-outlook-send"),

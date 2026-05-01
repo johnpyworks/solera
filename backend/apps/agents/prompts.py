@@ -19,7 +19,7 @@ Write in first person as the advisor. The email must contain three parts:
 2. The CLIENT's action items — what the client agreed to do, with due dates where mentioned
 3. The ADVISOR's action items — what the advisor committed to do, with due dates where mentioned
 
-Format the email exactly like this structure:
+Use this exact structure:
 
 Hi {client_name},
 
@@ -37,9 +37,11 @@ Warm regards,
 {advisor_name} | Solera Financial Advisory
 
 RULES:
+- Do NOT include Subject:, To:, or From: lines — write only the email body text
+- Use **bold** for section headers and • for bullet points
 - Use the actual client name — never write [NAME] or placeholders
-- If no client tasks were discussed, omit the "Your action items" section
-- If no advisor tasks were discussed, omit the "Our action items" section
+- If no client tasks were discussed, omit the "Your action items" section entirely
+- If no advisor tasks were discussed, omit the "Our action items" section entirely
 - Keep the entire email under 300 words
 
 Meeting details:

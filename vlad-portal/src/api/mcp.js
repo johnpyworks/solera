@@ -1,6 +1,6 @@
 import { apiFetch } from "./client";
 
-export const MCP_PROVIDER_ORDER = ["outlook", "zoom"];
+export const MCP_PROVIDER_ORDER = ["outlook", "teams", "zoom"];
 
 export const MCP_PROVIDER_LABELS = {
   outlook: "Outlook",
@@ -50,6 +50,21 @@ export async function fetchConnectorStatus() {
 export async function fetchConnectorEmbedUrl() {
   const data = await apiFetch("/mcp/connector/embed-url/");
   return data?.embed_url || "";
+}
+
+export async function fetchCredentials(service) {
+  return apiFetch(`/mcp/connector/credentials/${service}/`);
+}
+
+export async function saveCredentials(service, fields) {
+  return apiFetch(`/mcp/connector/credentials/${service}/`, {
+    method: "POST",
+    body: JSON.stringify(fields),
+  });
+}
+
+export async function testConnection(service) {
+  return apiFetch(`/mcp/connector/test/${service}/`, { method: "POST" });
 }
 
 function buildRangeQuery(start, end, days = null) {

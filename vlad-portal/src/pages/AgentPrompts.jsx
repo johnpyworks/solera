@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import MDEditor from "@uiw/react-md-editor";
+import "@uiw/react-md-editor/markdown-editor.css";
 import { ChevronRight, RotateCcw, Save } from "lucide-react";
 import { apiFetch } from "../api/client";
 
@@ -192,7 +193,7 @@ export default function AgentPromptsPage() {
                   value={editorValue}
                   onChange={(val) => setEditorValue(val || "")}
                   height={420}
-                  preview="edit"
+                  preview="live"
                   visibleDragbar={false}
                 />
               </div>

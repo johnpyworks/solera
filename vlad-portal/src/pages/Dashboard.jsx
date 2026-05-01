@@ -32,7 +32,9 @@ function formatDateTime(value) {
 
 function getUpcomingLabel(provider, item) {
   if (provider === "outlook") {
-    return `${formatDateTime(item.start)}${item.location ? ` - ${item.location}` : ""}`;
+    const startStr = item.start?.dateTime || item.start || "";
+    const locationStr = item.location?.displayName || item.location || "";
+    return `${formatDateTime(startStr)}${locationStr ? ` - ${locationStr}` : ""}`;
   }
   if (provider === "teams") {
     return `${formatDateTime(item.start_time)} - Teams transcript available`;
@@ -204,7 +206,7 @@ export default function Dashboard() {
             <div className="meeting-list">
               {upcomingItems.map((item) => {
                 const title = item.subject || item.topic || "Untitled";
-                const key = item.id || item.lookupId || `${title}-${item.start || item.start_time}`;
+                const key = item.id || item.lookupId || `${title}-${item.start?.dateTime || item.start || item.start_time}`;
                 return (
                   <div key={key} className="meeting-item">
                     <div className="meeting-type-dot" style={{ background: "#06b6d4" }} />

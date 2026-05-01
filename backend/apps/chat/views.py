@@ -446,6 +446,7 @@ class ChatMessagesView(APIView):
             }
 
             approval = ApprovalItem.objects.create(
+                owner=user,
                 client_id=client_id,
                 client_name=client.name,
                 item_type="calendar_event",
@@ -512,6 +513,7 @@ class ChatMessagesView(APIView):
                 "body": extracted.get("body", ""),
             }
             approval = ApprovalItem.objects.create(
+                owner=user,
                 client_id=client_id,
                 client_name=client.name,
                 item_type="email_followup",
